@@ -7,6 +7,7 @@ Menu runs; nothing on the console's storage is changed. Turn PumpkinSpice off (o
 Menu to get the stock Menu back.
 
 ## Requirements
+- A USA or EUR Wii U Menu. There's no JPN support.
 - Aroma with the [WiiUPluginLoaderBackend](https://github.com/wiiu-env/WiiUPluginLoaderBackend) and the
   [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
   `sd:/wiiu/environments/aroma/modules`.
