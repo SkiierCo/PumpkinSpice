@@ -224,7 +224,84 @@ folder_tint_part:
     addi    1, 1, 0x20
     blr
 
+# ---------------------------------------------------------------------------------------------------------------
+# Long titles shrink (the launcher's title balloon, resize function 0x0202af88; balloon object in r31): its two
+# resize calls are each the first word of a block
+#     bl resize / lfs f13,A(r1) / lfs f0,B(r1) / stfs f13,0xfc(r31)
+# (A, B = 8, 0xc for the "minimum size" path, 0x14, 0x18 for the other). The cave makes the call (arguments r3-r7 are
+# untouched by the detour), shrinks the title, then redoes the block's loads and store in the caller's frame.
+# Shrink: the title's drawn rect (draw_rect(T_Balloon r31 +0x118, &rect)); taller than 1.5 lines -> scale
+# 40.76 / height (at least 0.55), else 1; set_scale(T_Balloon, &{s, s}).
+    .global cave_title_min
+cave_title_min:
+    mflr    12
+    stwu    1, -0x20(1)
+    stw     12, 0x08(1)
+    CALL_CAVE 0x24                  # resize with a minimum size: the stock call
+    bl      title_shrink
+    lwz     12, 0x08(1)
+    addi    1, 1, 0x20
+    lfs     13, 0x08(1)             # the block's own instructions
+    lfs     0, 0x0C(1)
+    stfs    13, 0xFC(31)
+    mtlr    12
+    blr
+
+    .global cave_title_fit
+cave_title_fit:
+    mflr    12
+    stwu    1, -0x20(1)
+    stw     12, 0x08(1)
+    CALL_CAVE 0x28                  # resize without a minimum: the stock call
+    bl      title_shrink
+    lwz     12, 0x08(1)
+    addi    1, 1, 0x20
+    lfs     13, 0x14(1)             # the block's own instructions
+    lfs     0, 0x18(1)
+    stfs    13, 0xFC(31)
+    mtlr    12
+    blr
+
+title_shrink:
+    mflr    0
+    stwu    1, -0x30(1)
+    stw     0, 0x34(1)
+    lwz     3, 0x118(31)            # T_Balloon
+    cmpwi   3, 0
+    beq     9f
+    addi    4, 1, 0x10              # rect: left, top, right, bottom
+    CALL_CAVE 0x2C                  # draw_rect
+    lfs     2, 0x14(1)
+    lfs     3, 0x1C(1)
+    fsubs   3, 3, 2
+    fabs    3, 3                    # f3 = height
+    lis     12, title_consts@ha
+    addi    12, 12, title_consts@l
+    lfs     5, 0(12)                # 1.5 lines
+    lfs     6, 4(12)                # 1.0
+    fcmpu   0, 3, 5
+    ble     1f
+    lfs     6, 8(12)                # one line
+    fdivs   6, 6, 3
+    lfs     7, 12(12)               # smallest scale
+    fcmpu   0, 6, 7
+    bge     1f
+    fmr     6, 7
+1:
+    stfs    6, 0x20(1)
+    stfs    6, 0x24(1)
+    lwz     3, 0x118(31)
+    addi    4, 1, 0x20
+    CALL_CAVE 0x30                  # set_scale(T_Balloon, &{s, s})
+9:
+    lwz     0, 0x34(1)
+    mtlr    0
+    addi    1, 1, 0x30
+    blr
+
     .section .rodata
+    .align 2
+title_consts:      .float 61.14, 1.0, 40.76, 0.55
 str_P_BtnSlideR:   .asciz "P_BtnSlideR"
 str_PF_RBtnMask:   .asciz "PF_RBtnMask"
 str_L_FolderName:  .asciz "L_FolderName"

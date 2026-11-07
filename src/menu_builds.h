@@ -15,8 +15,8 @@ struct MenuValue {
 
 struct MenuBuild {
     const char *name;
-    MenuBlock page1, plaza1, plaza2, centre, folder;
-    uint32_t show, is_shown, set_visible, set_black, set_white, find_picture, centre_global;
+    MenuBlock page1, plaza1, plaza2, centre, folder, title_min, title_fit;
+    uint32_t show, is_shown, set_visible, set_black, set_white, find_picture, centre_global, title_resize_min, title_resize_fit, draw_rect, set_scale;
     MenuValue ring_rx, ring_rz, crowd_outer, crowd_outer2, crowd_inner;
 };
 
@@ -27,6 +27,8 @@ static const MenuBuild kMenuBuilds[] = {
          {0x021ABD68, {0xFD604050, 0xD35F0004, 0xEC150672, 0x3AF70001}},
          {0x021ABD94, {0xD39F0000, 0xD39F0008, 0x84183F48, 0x3BFB01C8}},
          {0x021D2128, {0x4BEC6B59, 0x807E0194, 0x2C030000, 0x41820080}},
+         {0x0202AFE0, {0x4806CFFD, 0xC1A10008, 0xC001000C, 0xD1BF00FC}},
+         {0x0202B014, {0x4806CF35, 0xC1A10014, 0xC0010018, 0xD1BF00FC}},
          0x021F8714,
          0x021F8670,
          0x02098978,
@@ -34,6 +36,10 @@ static const MenuBuild kMenuBuilds[] = {
          0x02098AE0,
          0x02094FB8,
          0x100F3F48,
+         0x02097FDC,
+         0x02097F48,
+         0x023FA134,
+         0x020988C4,
          {0x10034890, 0x433E0000},
          {0x1003488C, 0x43340000},
          {0x100348D4, 0x43160000},
@@ -45,6 +51,8 @@ static const MenuBuild kMenuBuilds[] = {
          {0x021ABDE0, {0xFD604050, 0xD35F0004, 0xEC150672, 0x3AF70001}},
          {0x021ABE0C, {0xD39F0000, 0xD39F0008, 0x8418436C, 0x3BFB01C8}},
          {0x021D21A0, {0x4BEC6AE1, 0x807E0194, 0x2C030000, 0x41820080}},
+         {0x0202AFE0, {0x4806CFFD, 0xC1A10008, 0xC001000C, 0xD1BF00FC}},
+         {0x0202B014, {0x4806CF35, 0xC1A10014, 0xC0010018, 0xD1BF00FC}},
          0x021F8FFC,
          0x021F8F58,
          0x02098978,
@@ -52,6 +60,10 @@ static const MenuBuild kMenuBuilds[] = {
          0x02098AE0,
          0x02094FB8,
          0x100F436C,
+         0x02097FDC,
+         0x02097F48,
+         0x023FC0B0,
+         0x020988C4,
          {0x10034898, 0x433E0000},
          {0x10034894, 0x43340000},
          {0x100348DC, 0x43160000},
@@ -63,6 +75,8 @@ static const MenuBuild kMenuBuilds[] = {
          {0x021ABCF0, {0xFD604050, 0xD35F0004, 0xEC150672, 0x3AF70001}},
          {0x021ABD1C, {0xD39F0000, 0xD39F0008, 0x84184368, 0x3BFB01C8}},
          {0x021D20B0, {0x4BEC6BD1, 0x807E0194, 0x2C030000, 0x41820080}},
+         {0x0202AFE0, {0x4806CFFD, 0xC1A10008, 0xC001000C, 0xD1BF00FC}},
+         {0x0202B014, {0x4806CF35, 0xC1A10014, 0xC0010018, 0xD1BF00FC}},
          0x021F8F0C,
          0x021F8E68,
          0x02098978,
@@ -70,6 +84,10 @@ static const MenuBuild kMenuBuilds[] = {
          0x02098AE0,
          0x02094FB8,
          0x100F4368,
+         0x02097FDC,
+         0x02097F48,
+         0x023FBFC0,
+         0x020988C4,
          {0x10034888, 0x433E0000},
          {0x10034884, 0x43340000},
          {0x100348CC, 0x43160000},

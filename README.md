@@ -53,6 +53,7 @@ comment):
 ```
 page1_hide_right_arrow                        launcher page 1: the right arrow stays usable but is not drawn
 folder_footer_color                           folder name bar, settings and back corners take the folder color
+shrink_long_titles                            launcher titles longer than one line shrink to about one line (min 0.55)
 plaza_offset <x> <z>                          Wara Wara Plaza icon ring and centre moved by (x, z); -z moves it up
 plaza_ring_radius <x> <z>                     icon ring radii (stock 190 180)
 plaza_crowd_radius <outer> <outer2> <inner>   Mii crowd scatter radii (stock 150 300 50)
@@ -62,7 +63,8 @@ Example (Persona Advanced RELOADED):
 ```
 page1_hide_right_arrow
 folder_footer_color
-plaza_offset 75 -35
+shrink_long_titles
+plaza_offset 75 -10
 plaza_ring_radius 150 115
 plaza_crowd_radius 70 140 35
 ```
@@ -90,6 +92,12 @@ logging if the module is missing).
 every code patch write and its read-back); each line is written and closed on its own, so the log survives a hang.
 
 ## Changes
+**v1.2**
+- New code patch `shrink_long_titles`: a launcher title that wraps or has its own line break is scaled down to about
+  one line's height (at least 0.55) so it fits the theme's title banner; one-line titles stay full size. Hooks the
+  title balloon's resize in all three supported Menus.
+- CI no longer publishes nightly releases; releases come from version tags.
+
 **v1.1**
 - Code patches work on consoles: the KernelModule import is linked with its linker script, the Menu's code is found
   through the system's RPL list (it isn't at its link address on a console), Menu code is read and written through the

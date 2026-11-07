@@ -19,8 +19,10 @@
 struct CaveData {
     uint32_t show, is_shown, set_visible, set_black, set_white, find_picture, centre_global;
     float x_off, z_off;
+    uint32_t title_resize_min, title_resize_fit, draw_rect, set_scale;
 };
 static_assert(offsetof(CaveData, centre_global) == 0x18 && offsetof(CaveData, x_off) == 0x1C && offsetof(CaveData, z_off) == 0x20);
+static_assert(offsetof(CaveData, title_resize_min) == 0x24 && offsetof(CaveData, set_scale) == 0x30);
 
 extern "C" {
 CaveData gCave;
@@ -29,6 +31,8 @@ void cave_plaza2();
 void cave_centre();
 void cave_page1();
 void cave_folder();
+void cave_title_min();
+void cave_title_fit();
 }
 
 namespace {
@@ -36,11 +40,12 @@ namespace {
     struct Options {
         bool page1       = false;
         bool folder      = false;
+        bool shrinkTitle = false;
         bool plazaOffset = false, ringRadius = false, crowdRadius = false;
         float x = 0, z = 0;
         float ringX = 0, ringZ = 0;
         float crowdOuter = 0, crowdOuter2 = 0, crowdInner = 0;
-        bool any() const { return page1 || folder || plazaOffset || ringRadius || crowdRadius; }
+        bool any() const { return page1 || folder || shrinkTitle || plazaOffset || ringRadius || crowdRadius; }
     };
 
     bool ReadOptions(const std::string &path, Options &o) {
@@ -68,6 +73,8 @@ namespace {
                 o.ringRadius = static_cast<bool>(in >> o.ringX >> o.ringZ);
             } else if (key == "plaza_crowd_radius") {
                 o.crowdRadius = static_cast<bool>(in >> o.crowdOuter >> o.crowdOuter2 >> o.crowdInner);
+            } else if (key == "shrink_long_titles") {
+                o.shrinkTitle = true;
             } else {
                 DEBUG_FUNCTION_LINE_WARN("code.txt: unknown line \"%s\"", key.c_str());
             }
@@ -189,7 +196,11 @@ namespace {
         for (MenuBlock *blk : {&r.page1, &r.plaza1, &r.plaza2, &r.centre, &r.folder}) {
             blk->addr += p.textDelta;
         }
-        for (uint32_t *fn : {&r.show, &r.is_shown, &r.set_visible, &r.set_black, &r.set_white, &r.find_picture}) {
+        for (MenuBlock *blk : {&r.title_min, &r.title_fit}) {
+            blk->addr += p.textDelta;
+        }
+        for (uint32_t *fn : {&r.show, &r.is_shown, &r.set_visible, &r.set_black, &r.set_white, &r.find_picture,
+                             &r.title_resize_min, &r.title_resize_fit, &r.draw_rect, &r.set_scale}) {
             *fn += p.textDelta;
         }
         r.centre_global += p.dataDelta;
@@ -259,7 +270,7 @@ namespace {
     }
 
     bool MatchesCode(const MenuBuild &b) {
-        for (const MenuBlock *blk : {&b.page1, &b.plaza1, &b.plaza2, &b.centre, &b.folder}) {
+        for (const MenuBlock *blk : {&b.page1, &b.plaza1, &b.plaza2, &b.centre, &b.folder, &b.title_min, &b.title_fit}) {
             for (int i = 0; i < 4; i++) {
                 if (Read(blk->addr + 4 * i) != blk->expect[i]) {
                     SDLOG("  %s: no match at %08X (%08X, expected %08X)", b.name, blk->addr + 4 * i, Read(blk->addr + 4 * i), blk->expect[i]);
@@ -342,8 +353,8 @@ void ApplyCodePatches(const std::string &themePath) {
         SDLOG("code.txt: none or no active lines");
         return;
     }
-    SDLOG("code.txt: page1 %d folder %d plaza_offset %d (%g %g) ring %d crowd %d", o.page1, o.folder, o.plazaOffset, o.x, o.z,
-          o.ringRadius, o.crowdRadius);
+    SDLOG("code.txt: page1 %d folder %d shrink_long_titles %d plaza_offset %d (%g %g) ring %d crowd %d", o.page1, o.folder,
+          o.shrinkTitle, o.plazaOffset, o.x, o.z, o.ringRadius, o.crowdRadius);
     if (!KernelCopySelfTest()) {
         SDLOG("kernel copy self-test failed: code patches skipped");
         return;
@@ -376,8 +387,10 @@ void ApplyCodePatches(const std::string &themePath) {
     const bool dataOk = MatchesData(*build);
     SDLOG("Plaza data constants %s", dataOk ? "found" : "not found: radius patches skipped");
 
-    gCave = {build->show, build->is_shown, build->set_visible, build->set_black, build->set_white, build->find_picture,
-             build->centre_global, o.x, o.z};
+    gCave = {build->show, build->is_shown, build->set_visible, build->set_black,
+             build->set_white, build->find_picture, build->centre_global, o.x,
+             o.z, build->title_resize_min, build->title_resize_fit, build->draw_rect,
+             build->set_scale};
     DCFlushRange(&gCave, sizeof(gCave));
     SDLOG("gCave %08X; caves page1 %08X folder %08X plaza1 %08X plaza2 %08X centre %08X (phys of page1 cave %08X)",
           reinterpret_cast<uint32_t>(&gCave), reinterpret_cast<uint32_t>(cave_page1), reinterpret_cast<uint32_t>(cave_folder),
@@ -393,6 +406,9 @@ void ApplyCodePatches(const std::string &themePath) {
     }
     if (o.folder) {
         Report("folder_footer_color", Detour(build->folder, cave_folder));
+    }
+    if (o.shrinkTitle) {
+        Report("shrink_long_titles", Detour(build->title_min, cave_title_min) && Detour(build->title_fit, cave_title_fit));
     }
     if (o.ringRadius && dataOk) {
         Report("plaza_ring_radius", WriteWord(build->ring_rx.addr, FloatBits(o.ringX)) && WriteWord(build->ring_rz.addr, FloatBits(o.ringZ)));
