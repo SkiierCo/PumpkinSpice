@@ -4,7 +4,11 @@ on:
   push:
     branches:
       - main
-    
+
+# the deploy job creates a GitHub release
+permissions:
+  contents: write
+
 jobs:
   clang-format:
     runs-on: ubuntu-22.04
