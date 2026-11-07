@@ -1,98 +1,70 @@
-[![CI-Release](https://github.com/wiiu-env/sdcafiine_plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/wiiu-env/sdcafiine_plugin/actions/workflows/ci.yml)
+[![CI-Release](https://github.com/SkiierCo/PumpkinSpice/actions/workflows/ci.yml/badge.svg)](https://github.com/SkiierCo/PumpkinSpice/actions/workflows/ci.yml)
 
-# SDCafiine Plugin
+# PumpkinSpice
 
-## What is SDCafiine
-The main feature of this plugin is the **on-the-fly replacing of files**, which can be used to load modified content from external media (**SD**). It hooks into the file system functions of the Wii U. Whenever a file is accessed, SDCafiine checks if a (modified) version is present on the SD card, and redirect the file operations if needed.
+A Wii U plugin that loads Wii U Menu themes from the SD card. Theme files replace the Menu's own files while the
+Menu runs; nothing on the console's storage is changed. Turn PumpkinSpice off (or remove the theme) and restart the
+Menu to get the stock Menu back.
 
-## Dependencies
-Requires the [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) to be loaded.
+## Requirements
+- Aroma with the [WiiUPluginLoaderBackend](https://github.com/wiiu-env/WiiUPluginLoaderBackend) and the
+  [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
+  `sd:/wiiu/environments/aroma/modules`.
+- The `titles` folder (EULA text, app icons) needs ContentRedirectionModule API version 2 or newer.
 
-## Installation of the plugin
-(`[ENVIRONMENT]` is a placeholder for the actual environment name.)
+## Installation
+Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
 
-1. Copy the file `sdcafiine.wps` into `sd:/wiiu/environments/[ENVIRONMENT]/plugins`.  
-2. Requires the [WiiUPluginLoaderBackend](https://github.com/wiiu-env/WiiUPluginLoaderBackend) in `sd:/wiiu/environments/[ENVIRONMENT]/modules`.
-3. Requires the [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in `sd:/wiiu/environments/[ENVIRONMENT]/modules`.
-
-## Usage
-**The path of SDCafiine has changed to `sd:/wiiu/sdcafiine`**
-
-Via the plugin config menu (press L, DPAD Down and Minus on the gamepad) you can configure the plugin. The available options are the following:
-- **Settings**: 
-  - Enable SDCafiine:
-    - With this option you can globally enable/disable SDCafiine. If you're currently running a game you need to restart it before this option has an effect.
-- **Advanced settings**:
-  - Auto apply the modpack if only one modpack exists:
-    - Skip the modpack selection screen if the current title only has one modpack to choose from. To boot the game without mods, you need to press X while "Preparing modpack" is shown on the screen.
-  - Skip "Preparing modpack..."-screen
-    - Skips the "Preparing modpack..."-screen which appears when auto booting into a single modpack for a title is activated. To run the game without mods you need to disable this option.
-
-### Installation of the mods
-Before the mods can be loaded, they need to be copied to a SD card. 
-**In the following "root:/" is corresponding to the root of your SD card**. The basic filepath structure is this:
+## Themes
+Each theme is a folder in `sd:/wiiu/pumpkinspice/themes`:
 
 ```
-root:/wiiu/sdcafiine/[TITLEID]/[MODPACK]/content/  <-- for game files. Maps to /vol/content/
-root:/wiiu/sdcafiine/[TITLEID]/[MODPACK]/aoc/  <-- for DLC files. Maps to /vol/aoc/
-```
-Replace the following:
-- "[TITLEID]" need to be replaced the TitleID of the games that should be modded. A list of title ids can be found [here](http://wiiubrew.org/w/index.php?title=Title_database#00050000:_eShop_and_disc_titles) (without the "-"). Example for SSBU "0005000010145000". Make sure to use the ID of the fullgame and not the update title ID. 
-- "[MODPACK]" name of the modpack.
-
-Example path for the EUR version of SuperSmashBros for Wii U:
-```
-root:/wiiu/sdcafiine/0005000010145000/SpecialChars/content/  <-- for game files. Maps to /vol/content/
-root:/wiiu/sdcafiine/0005000010145000/SpecialChars/aoc/  <-- for DLC files. Maps to /vol/aoc/
+sd:/wiiu/pumpkinspice/themes/<Theme name>/content/...                      Wii U Menu files (/vol/content)
+sd:/wiiu/pumpkinspice/themes/<Theme name>/titles/<title ID>/<folder>/...   files of other titles
 ```
 
-For replacing the file /vol/content/movie/intro.mp4, put a modified file into:
-```
-root:/wiiu/sdcafiine/0005000010145000/SpecialChars/content/movie/intro.mp4
-```
+- `content` mirrors the Menu's `content` folder. Only the files the theme changes are needed; everything else comes
+  from the Menu. Files the Menu doesn't have (e.g. a new music stream) are added.
+- `titles/<title ID>/<folder>` replaces files in that title's folder for the Wii U Menu, for files the Menu reads
+  from other titles. `<title ID>` is the 16-digit ID without the dash.
+  - EULA text: `titles/0005001b10050000/content/00/<language>/DeviceEula.msbt`
+  - App icons: `titles/<app title ID>/meta/iconTex.tga` (e.g. `0005001010047200` for EUR System Settings)
+- To hide a Menu file, add an empty file named `.deleted_<file name>` in the same folder.
 
-### Handling multiple mod packs
-SDCafiine supports multiple different mods for a single game on the same SD card. Each modpack has its own subdirectory.
-Example:
+Example (EUR):
 ```
-sd:/wiiu/sdcafiine/0005000010145000/ModPack1/content/
-sd:/wiiu/sdcafiine/0005000010145000/ModPack2/content/
-```
-### "Delete" files via SDCafiine
-If a game should not see or access a file anymore, it's possible to "delete"/"hide" it from the game without actually deleting it. 
-The process is similar to redirecting a file. But instead of creating a replacement file with the same name, you create an empty file with the prefix `.deleted_`.
-
-If you want to stop a game from accessing `/vol/content/assets/tree.bin` you need to create this file in your modpack.
-```
-root:/wiiu/sdcafiine/[TITLEID]/[MODPACK]/content/assets/.deleted_tree.bin
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/Common/Package/Men.pack
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/Common/Sound/Men/stream/BGM_MEN.bfstm
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/EuEnglish/Message/AllMessage.szs
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001b10050000/content/00/EuEnglish/DeviceEula.msbt
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001010047200/meta/iconTex.tga
 ```
 
-## Buildflags
+Title IDs differ by region (Wii U Menu: `0005001010040000` JPN, `0005001010040100` USA, `0005001010040200` EUR), so
+`titles` entries are per region. Entries for other regions are ignored.
 
-### Logging
-Building via `make` only logs errors (via OSReport). To enable logging via the [LoggingModule](https://github.com/wiiu-env/LoggingModule) set `DEBUG` to `1` or `VERBOSE`.
+## Settings
+Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
+- **Enable PumpkinSpice**: turns theme loading on or off.
+- **Theme**: the theme to load. Without a choice, the first theme folder (alphabetical) is used.
 
-`make` Logs errors only (via OSReport).  
-`make DEBUG=1` Enables information and error logging via [LoggingModule](https://github.com/wiiu-env/LoggingModule).  
-`make DEBUG=VERBOSE` Enables verbose information and error logging via [LoggingModule](https://github.com/wiiu-env/LoggingModule).  
+Changes apply the next time the Wii U Menu starts.
 
-If the [LoggingModule](https://github.com/wiiu-env/LoggingModule) is not present, it'll fallback to UDP (Port 4405) and [CafeOS](https://github.com/wiiu-env/USBSerialLoggingModule) logging.
+## Logging
+`make` logs errors only (via OSReport). `make DEBUG=1` adds information logging and `make DEBUG=VERBOSE` verbose
+logging via the [LoggingModule](https://github.com/wiiu-env/LoggingModule) (falls back to UDP port 4405 and CafeOS
+logging if the module is missing).
 
-## Building using the Dockerfile
-
-It's possible to use a docker image for building. This way you don't need anything installed on your host system.
-
+## Building
+With Docker:
 ```
-# Build docker image (only needed once)
-docker build . -t sdcafiineplugin-builder
-
-# make 
-docker run -it --rm -v ${PWD}:/project sdcafiineplugin-builder make
-
-# make clean
-docker run -it --rm -v ${PWD}:/project sdcafiineplugin-builder make clean
+docker build . -t pumpkinspice-builder
+docker run -it --rm -v ${PWD}:/project pumpkinspice-builder make
+docker run -it --rm -v ${PWD}:/project pumpkinspice-builder make clean
 ```
 
-## Format the code via docker
+Format the code: `docker run --rm -v ${PWD}:/src ghcr.io/wiiu-env/clang-format:13.0.0-2 -r ./src -i`
 
-`docker run --rm -v ${PWD}:/src ghcr.io/wiiu-env/clang-format:13.0.0-2 -r ./src -i`
+## Credits and license
+PumpkinSpice by Fil, based on the [SDCafiine plugin](https://github.com/wiiu-env/sdcafiine_plugin) by Maschell.
+Licensed under the GNU General Public License v3.0 (see `LICENSE`).

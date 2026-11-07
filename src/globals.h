@@ -1,21 +1,22 @@
 #pragma once
 #include "version.h"
 #include <content_redirection/redirection.h>
+#include <string>
+#include <vector>
 
-#define VERSION                                "v0.1.6"
-#define VERSION_FULL                           VERSION VERSION_EXTRA
+#define VERSION                      "v1.0.0"
+#define VERSION_FULL                 VERSION VERSION_EXTRA
 
-#define AUTO_APPLY_SINGLE_MODPACK_STRING       "autoApplySingleModpack"
-#define SKIP_PREPARE_FOR_SINGLE_MODPACK_STRING "skipPrepareForSingleModpack"
-#define SDCAFIINE_ENABLED_STRING               "sdCafiineEnabled"
+#define PUMPKINSPICE_ENABLED_STRING  "pumpkinSpiceEnabled"
+#define ACTIVE_THEME_STRING          "activeTheme"
 
-#define DEFAULT_AUTO_APPLY_SINGLE_MODPACK      false
-#define DEFAULT_SKIP_PREPARE_IF_SINGLE_MODPACK false
-#define DEFAULT_SDCAFIINE_ENABLED              true
+#define DEFAULT_PUMPKINSPICE_ENABLED true
 
-extern bool gAutoApplySingleModpack;
-extern bool gSkipPrepareIfSingleModpack;
-extern bool gSDCafiineEnabled;
+// Themes live in sd:/wiiu/pumpkinspice/themes/<theme name>/
+#define THEMES_PATH                  "fs:/vol/external01/wiiu/pumpkinspice/themes"
 
-extern CRLayerHandle gAocLayerHandle;
-extern CRLayerHandle gContentLayerHandle;
+extern bool gPumpkinSpiceEnabled;
+extern std::string gActiveTheme; // folder name of the selected theme ("" = first theme found)
+
+// layers added for the running Wii U Menu; removed when it ends
+extern std::vector<CRLayerHandle> gLayerHandles;

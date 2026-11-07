@@ -1,90 +1,101 @@
 #include "config.h"
 #include "globals.h"
 #include "logger.h"
+#include "theme.h"
+#include <string>
+#include <vector>
 #include <wups/config.h>
 #include <wups/config/WUPSConfigItemBoolean.h>
+#include <wups/config/WUPSConfigItemMultipleValues.h>
+#include <wups/config/WUPSConfigItemStub.h>
 #include <wups/config_api.h>
 #include <wups/storage.h>
 
-static void bool_item_callback(ConfigItemBoolean *item, bool newValue) {
-    if (!item || !item->identifier) {
-        DEBUG_FUNCTION_LINE_WARN("Invalid item or identifier in bool item callback");
-        return;
+namespace {
+
+    // theme list shown in the config menu; kept alive while the menu is open (the items refer to these strings)
+    std::vector<std::string> sThemeNames;
+    std::vector<WUPSConfigItemMultipleValues::ValuePair> sThemePairs;
+
+    void enabled_callback(ConfigItemBoolean *item, bool newValue) {
+        if (!item || !item->identifier) {
+            return;
+        }
+        gPumpkinSpiceEnabled = newValue;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store \"%s\": %s (%d)", item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+        }
     }
-    DEBUG_FUNCTION_LINE_VERBOSE("New value in %s changed: %d", item->identifier, newValue);
-    if (std::string_view(AUTO_APPLY_SINGLE_MODPACK_STRING) == item->identifier) {
-        gAutoApplySingleModpack = newValue;
-    } else if (std::string_view(SKIP_PREPARE_FOR_SINGLE_MODPACK_STRING) == item->identifier) {
-        gSkipPrepareIfSingleModpack = newValue;
-    } else if (std::string_view(SDCAFIINE_ENABLED_STRING) == item->identifier) {
-        gSDCafiineEnabled = newValue;
-    } else {
-        DEBUG_FUNCTION_LINE_WARN("Unexpected boolean item: %s", item->identifier);
-        return;
+
+    void theme_callback(ConfigItemMultipleValues *item, uint32_t newValue) {
+        if (!item || newValue >= sThemeNames.size()) {
+            return;
+        }
+        gActiveTheme = sThemeNames[newValue];
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(ACTIVE_THEME_STRING, gActiveTheme)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store the theme: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
+        }
     }
-    WUPSStorageError err;
-    if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
-        DEBUG_FUNCTION_LINE_WARN("Failed to store value %d to storage item \"%s\": %s (%d)", newValue, item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+
+    WUPSConfigAPICallbackStatus ConfigMenuOpenedCallback(WUPSConfigCategoryHandle rootHandle) {
+        try {
+            WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
+
+            root.add(WUPSConfigItemBoolean::Create(PUMPKINSPICE_ENABLED_STRING,
+                                                   "Enable PumpkinSpice (restart the Wii U Menu to apply)",
+                                                   DEFAULT_PUMPKINSPICE_ENABLED, gPumpkinSpiceEnabled,
+                                                   &enabled_callback));
+
+            sThemeNames = ListThemes();
+            sThemePairs.clear();
+            if (sThemeNames.empty()) {
+                root.add(WUPSConfigItemStub::Create("No themes in sd:/wiiu/pumpkinspice/themes"));
+            } else {
+                int current = 0;
+                for (size_t i = 0; i < sThemeNames.size(); i++) {
+                    sThemePairs.push_back({static_cast<uint32_t>(i), sThemeNames[i]});
+                    if (sThemeNames[i] == gActiveTheme) {
+                        current = static_cast<int>(i);
+                    }
+                }
+                root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING,
+                                                                       "Theme (restart the Wii U Menu to apply)",
+                                                                       0, current, sThemePairs, &theme_callback));
+            }
+        } catch (std::exception &e) {
+            DEBUG_FUNCTION_LINE_ERR("Exception: %s\n", e.what());
+            return WUPSCONFIG_API_CALLBACK_RESULT_ERROR;
+        }
+        return WUPSCONFIG_API_CALLBACK_RESULT_SUCCESS;
     }
-}
 
-static WUPSConfigAPICallbackStatus ConfigMenuOpenedCallback(WUPSConfigCategoryHandle rootHandle) {
-    try {
-        WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
-
-
-        root.add(WUPSConfigItemBoolean::Create(SDCAFIINE_ENABLED_STRING,
-                                               "Enable SDCafiine (game needs to be restarted)",
-                                               DEFAULT_SDCAFIINE_ENABLED, gSDCafiineEnabled,
-                                               &bool_item_callback));
-
-
-        auto advancedSettings = WUPSConfigCategory::Create("Advanced settings");
-
-        advancedSettings.add(WUPSConfigItemBoolean::Create(AUTO_APPLY_SINGLE_MODPACK_STRING,
-                                                           "Auto apply the modpack if only one modpack exists",
-                                                           DEFAULT_AUTO_APPLY_SINGLE_MODPACK, gAutoApplySingleModpack,
-                                                           &bool_item_callback));
-
-        advancedSettings.add(WUPSConfigItemBoolean::Create(SKIP_PREPARE_FOR_SINGLE_MODPACK_STRING,
-                                                           "Skip \"Preparing modpack...\" screen",
-                                                           DEFAULT_SKIP_PREPARE_IF_SINGLE_MODPACK, gSkipPrepareIfSingleModpack,
-                                                           &bool_item_callback));
-        root.add(std::move(advancedSettings));
-
-    } catch (std::exception &e) {
-        DEBUG_FUNCTION_LINE_ERR("Exception: %s\n", e.what());
-        return WUPSCONFIG_API_CALLBACK_RESULT_ERROR;
+    void ConfigMenuClosedCallback() {
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::SaveStorage()) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_ERR("Failed to save storage: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
+        }
     }
-    return WUPSCONFIG_API_CALLBACK_RESULT_SUCCESS;
-}
 
-static void ConfigMenuClosedCallback() {
-    // Save all changes
-    WUPSStorageError err;
-    if ((err = WUPSStorageAPI::SaveStorage()) != WUPS_STORAGE_ERROR_SUCCESS) {
-        DEBUG_FUNCTION_LINE_ERR("Failed to close storage: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
-    }
-}
-
+} // namespace
 
 void InitStorageAndConfig() {
     WUPSStorageError err;
-    if ((err = WUPSStorageAPI::GetOrStoreDefault(AUTO_APPLY_SINGLE_MODPACK_STRING, gAutoApplySingleModpack, DEFAULT_AUTO_APPLY_SINGLE_MODPACK)) != WUPS_STORAGE_ERROR_SUCCESS) {
-        DEBUG_FUNCTION_LINE_ERR("Failed to get or create item \"%s\": %s (%d)", AUTO_APPLY_SINGLE_MODPACK_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(PUMPKINSPICE_ENABLED_STRING, gPumpkinSpiceEnabled, DEFAULT_PUMPKINSPICE_ENABLED)) != WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", PUMPKINSPICE_ENABLED_STRING, WUPSStorageAPI_GetStatusStr(err), err);
     }
-    if ((err = WUPSStorageAPI::GetOrStoreDefault(SDCAFIINE_ENABLED_STRING, gSDCafiineEnabled, DEFAULT_SDCAFIINE_ENABLED)) != WUPS_STORAGE_ERROR_SUCCESS) {
-        DEBUG_FUNCTION_LINE_ERR("Failed to get or create item \"%s\": %s (%d)", SDCAFIINE_ENABLED_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    if (WUPSStorageAPI::Get(ACTIVE_THEME_STRING, gActiveTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
+        gActiveTheme.clear();
+        if ((err = WUPSStorageAPI::Store(ACTIVE_THEME_STRING, gActiveTheme)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_ERR("Failed to create \"%s\": %s (%d)", ACTIVE_THEME_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+        }
     }
-    if ((err = WUPSStorageAPI::GetOrStoreDefault(SKIP_PREPARE_FOR_SINGLE_MODPACK_STRING, gSkipPrepareIfSingleModpack, DEFAULT_SKIP_PREPARE_IF_SINGLE_MODPACK)) != WUPS_STORAGE_ERROR_SUCCESS) {
-        DEBUG_FUNCTION_LINE_ERR("Failed to get or create item \"%s\": %s (%d)", SKIP_PREPARE_FOR_SINGLE_MODPACK_STRING, WUPSStorageAPI_GetStatusStr(err), err);
-    }
-
     if ((err = WUPSStorageAPI::SaveStorage()) != WUPS_STORAGE_ERROR_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to save storage: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
     }
 
-    WUPSConfigAPIOptionsV1 configOptions = {.name = "SDCafiine"};
+    WUPSConfigAPIOptionsV1 configOptions = {.name = "PumpkinSpice"};
     WUPSConfigAPIStatus configErr;
     if ((configErr = WUPSConfigAPI_Init(configOptions, ConfigMenuOpenedCallback, ConfigMenuClosedCallback)) != WUPSCONFIG_API_RESULT_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to init config api: %s (%d)", WUPSConfigAPI_GetStatusStr(configErr), configErr);
