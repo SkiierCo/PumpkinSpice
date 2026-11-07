@@ -12,6 +12,8 @@ Menu to get the stock Menu back.
   [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
   `sd:/wiiu/environments/aroma/modules`.
 - The `titles` folder (EULA text, app icons) needs ContentRedirectionModule API version 2 or newer.
+- No StyleMiiU (the plugin Themiify uses). Both theme the Wii U Menu, so PumpkinSpice stays off while `stylemiiu.wps`
+  is in the same plugins folder; its config menu shows "Off while StyleMiiU is installed".
 
 ## Installation
 Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
@@ -65,22 +67,38 @@ plaza_ring_radius 150 115
 plaza_crowd_radius 70 140 35
 ```
 
-Supported Wii U Menu code: USA 5.5.x and EUR 5.5.5 stock, and the TVii (OG Menu) patched Menu. The plugin checks the
-exact instructions and values at every place it changes; if the running Menu doesn't match a supported build (another
-build, or a Menu that is already modified) the code patches are skipped and only the files are loaded. Requires the
-KernelModule (part of Aroma).
+Supported Wii U Menu code: USA 5.5.x and EUR 5.5.5 stock, and the TVii (OG Menu) patched Menu. The plugin asks the
+system where `men.rpx` is loaded (its RPL list), checks the exact instructions and values at every place it changes,
+and writes them through the kernel. If the running Menu doesn't match a supported build (another build, or a Menu that
+is already modified) the code patches are skipped and only the files are loaded. Requires the KernelModule (part of
+Aroma).
 
 ## Settings
 Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
-- **Enable PumpkinSpice**: turns theme loading on or off.
+- **Enabled**: turns theme loading on or off.
 - **Theme**: the theme to load. Without a choice, the first theme folder (alphabetical) is used.
 
-Changes apply the next time the Wii U Menu starts.
+Changes apply the next time the Wii U Menu starts. With StyleMiiU installed, the menu shows "Off while StyleMiiU is
+installed" and nothing is loaded.
 
 ## Logging
 `make` logs errors only (via OSReport). `make DEBUG=1` adds information logging and `make DEBUG=VERBOSE` verbose
 logging via the [LoggingModule](https://github.com/wiiu-env/LoggingModule) (falls back to UDP port 4405 and CafeOS
 logging if the module is missing).
+
+`make SDLOG=1` also writes a step-by-step log to `sd:/wiiu/pumpkinspice/log.txt` (theme, layers, the Menu build found,
+every code patch write and its read-back); each line is written and closed on its own, so the log survives a hang.
+
+## Changes
+**v1.1**
+- Code patches work on consoles: the KernelModule import is linked with its linker script, the Menu's code is found
+  through the system's RPL list (it isn't at its link address on a console), Menu code is read and written through the
+  kernel, and the instruction cache is cleared on every core.
+- PumpkinSpice stays off while StyleMiiU is installed.
+- Shorter config menu labels.
+- Optional SD card log (`make SDLOG=1`).
+
+**v1.0.0**: first release.
 
 ## Building
 With Docker:

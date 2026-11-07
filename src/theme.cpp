@@ -2,6 +2,7 @@
 #include "codepatch.h"
 #include "globals.h"
 #include "utils/logger.h"
+#include "utils/sdlog.h"
 #include <algorithm>
 #include <cctype>
 #include <content_redirection/redirection.h>
@@ -98,6 +99,44 @@ std::vector<std::string> ListThemes() {
     return ListDirs(THEMES_PATH);
 }
 
+// StyleMiiU (the plugin Themiify installs themes for) themes the Wii U Menu too, and the two clash. It counts as
+// installed when an environment's plugins folder holds both stylemiiu.wps and PumpkinSpice's own .wps (names compared
+// without case), so a copy in an environment that isn't in use doesn't turn PumpkinSpice off.
+bool StyleMiiUInstalled() {
+    static int sFound = -1;
+    if (sFound >= 0) {
+        return sFound == 1;
+    }
+    sFound                 = 0;
+    const std::string envs = "fs:/vol/external01/wiiu/environments";
+    auto lower             = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+        return s;
+    };
+    for (const auto &env : ListDirs(envs)) {
+        DIR *dir = opendir((envs + "/" + env + "/plugins").c_str());
+        if (!dir) {
+            continue;
+        }
+        bool ours = false, theirs = false;
+        while (auto *entry = readdir(dir)) {
+            const std::string name = lower(entry->d_name);
+            if (name == "stylemiiu.wps") {
+                theirs = true;
+            } else if (name.rfind("pumpkinspice", 0) == 0 && name.size() > 4 && name.compare(name.size() - 4, 4, ".wps") == 0) {
+                ours = true;
+            }
+        }
+        closedir(dir);
+        if (ours && theirs) {
+            DEBUG_FUNCTION_LINE("StyleMiiU found in %s/%s/plugins: PumpkinSpice stays off", envs.c_str(), env.c_str());
+            sFound = 1;
+            break;
+        }
+    }
+    return sFound == 1;
+}
+
 bool IsWiiUMenu(uint64_t titleID) {
     return titleID == 0x0005001010040000ULL || titleID == 0x0005001010040100ULL || titleID == 0x0005001010040200ULL;
 }
@@ -114,8 +153,10 @@ void ApplyTheme() {
     }
     const std::string themePath = std::string(THEMES_PATH) + "/" + theme;
     DEBUG_FUNCTION_LINE("Applying theme \"%s\"", theme.c_str());
+    SDLOG("theme \"%s\"", theme.c_str());
     AddContentLayer(themePath);
     AddTitleLayers(themePath);
+    SDLOG("layers added: %d", (int) gLayerHandles.size());
     ApplyCodePatches(themePath);
 }
 

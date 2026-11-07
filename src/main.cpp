@@ -2,6 +2,7 @@
 #include "theme.h"
 #include "utils/config.h"
 #include "utils/logger.h"
+#include "utils/sdlog.h"
 #include <content_redirection/redirection.h>
 #include <coreinit/title.h>
 #include <wups.h>
@@ -24,6 +25,7 @@ INITIALIZE_PLUGIN() {
 
     InitStorageAndConfig();
     gLayerHandles.clear();
+    SDLOG("=== PumpkinSpice %s loaded", VERSION_FULL);
 }
 
 ON_APPLICATION_START() {
@@ -31,14 +33,21 @@ ON_APPLICATION_START() {
     if (!IsWiiUMenu(OSGetTitleID())) {
         return;
     }
-    if (gPumpkinSpiceEnabled) {
+    SDLOG("=== Wii U Menu start %016llX, PumpkinSpice %s, enabled %d", OSGetTitleID(), VERSION_FULL, gPumpkinSpiceEnabled);
+    if (StyleMiiUInstalled()) {
+        SDLOG("StyleMiiU is installed: theme not applied");
+    } else if (gPumpkinSpiceEnabled) {
         ApplyTheme();
     } else {
         DEBUG_FUNCTION_LINE("PumpkinSpice is disabled");
     }
+    SDLOG("ON_APPLICATION_START done");
 }
 
 ON_APPLICATION_ENDS() {
+    if (IsWiiUMenu(OSGetTitleID())) {
+        SDLOG("=== Wii U Menu ends");
+    }
     RemoveTheme();
     deinitLogging();
 }

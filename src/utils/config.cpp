@@ -43,8 +43,10 @@ namespace {
         try {
             WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
 
-            root.add(WUPSConfigItemBoolean::Create(PUMPKINSPICE_ENABLED_STRING,
-                                                   "Enable PumpkinSpice (restart the Wii U Menu to apply)",
+            if (StyleMiiUInstalled()) {
+                root.add(WUPSConfigItemStub::Create("Off while StyleMiiU is installed"));
+            }
+            root.add(WUPSConfigItemBoolean::Create(PUMPKINSPICE_ENABLED_STRING, "Enabled",
                                                    DEFAULT_PUMPKINSPICE_ENABLED, gPumpkinSpiceEnabled,
                                                    &enabled_callback));
 
@@ -60,10 +62,10 @@ namespace {
                         current = static_cast<int>(i);
                     }
                 }
-                root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING,
-                                                                       "Theme (restart the Wii U Menu to apply)",
+                root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING, "Theme",
                                                                        0, current, sThemePairs, &theme_callback));
             }
+            root.add(WUPSConfigItemStub::Create("Changes apply when the Wii U Menu restarts"));
         } catch (std::exception &e) {
             DEBUG_FUNCTION_LINE_ERR("Exception: %s\n", e.what());
             return WUPSCONFIG_API_CALLBACK_RESULT_ERROR;
