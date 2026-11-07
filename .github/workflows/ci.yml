@@ -1,13 +1,13 @@
-name: CI-Release
+name: CI
 
 on:
   push:
     branches:
       - main
 
-# the deploy job creates a GitHub release
+# format check and build only; releases come from version tags (release.yml)
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   clang-format:
@@ -37,27 +37,3 @@ jobs:
       with:
        name: binary
        path: "*.wps"
-  deploy-binary:
-    needs: build-binary
-    runs-on: ubuntu-22.04
-    steps:   
-    - name: Get environment variables
-      id: get_repository_name
-      run: |
-        echo REPOSITORY_NAME=$(echo "$GITHUB_REPOSITORY" | awk -F / '{print $2}' | sed -e "s/:refs//") >> $GITHUB_ENV
-        echo DATETIME=$(echo $(date '+%Y%m%d-%H%M%S')) >> $GITHUB_ENV 
-    - uses: actions/download-artifact@master
-      with:
-        name: binary
-    - name: zip artifact
-      run: zip -r ${{ env.REPOSITORY_NAME }}_${{ env.DATETIME }}.zip *.wps
-    - name: Create Release
-      uses: "softprops/action-gh-release@v2"
-      with:
-        tag_name: ${{ env.REPOSITORY_NAME }}-${{ env.DATETIME }}
-        draft: false
-        prerelease: true
-        generate_release_notes: true
-        name: Nightly-${{ env.REPOSITORY_NAME }}-${{ env.DATETIME }}
-        files: |
-          ./${{ env.REPOSITORY_NAME }}_${{ env.DATETIME }}.zip
