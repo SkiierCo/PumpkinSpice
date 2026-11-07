@@ -1,4 +1,5 @@
 #include "theme.h"
+#include "codepatch.h"
 #include "globals.h"
 #include "utils/logger.h"
 #include <algorithm>
@@ -115,6 +116,7 @@ void ApplyTheme() {
     DEBUG_FUNCTION_LINE("Applying theme \"%s\"", theme.c_str());
     AddContentLayer(themePath);
     AddTitleLayers(themePath);
+    ApplyCodePatches(themePath);
 }
 
 void RemoveTheme() {

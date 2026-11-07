@@ -43,6 +43,32 @@ sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001010047200/m
 Title IDs differ by region (Wii U Menu: `0005001010040000` JPN, `0005001010040100` USA, `0005001010040200` EUR), so
 `titles` entries are per region. Entries for other regions are ignored.
 
+### Code patches
+A theme can change some of the Menu's behaviour with a `code.txt` in its folder (one option per line, `#` starts a
+comment):
+
+```
+page1_hide_right_arrow                        launcher page 1: the right arrow stays usable but is not drawn
+folder_footer_color                           folder name bar, settings and back corners take the folder color
+plaza_offset <x> <z>                          Wara Wara Plaza icon ring and centre moved by (x, z); -z moves it up
+plaza_ring_radius <x> <z>                     icon ring radii (stock 190 180)
+plaza_crowd_radius <outer> <outer2> <inner>   Mii crowd scatter radii (stock 150 300 50)
+```
+
+Example (Persona Advanced RELOADED):
+```
+page1_hide_right_arrow
+folder_footer_color
+plaza_offset 75 -35
+plaza_ring_radius 150 115
+plaza_crowd_radius 70 140 35
+```
+
+Supported Wii U Menu code: USA 5.5.x and EUR 5.5.5 stock, and the TVii (OG Menu) patched Menu. The plugin checks the
+exact instructions and values at every place it changes; if the running Menu doesn't match a supported build (another
+build, or a Menu that is already modified) the code patches are skipped and only the files are loaded. Requires the
+KernelModule (part of Aroma).
+
 ## Settings
 Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
 - **Enable PumpkinSpice**: turns theme loading on or off.
