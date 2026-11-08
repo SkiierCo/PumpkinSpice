@@ -28,6 +28,17 @@ namespace {
         }
     }
 
+    void title_files_callback(ConfigItemBoolean *item, bool newValue) {
+        if (!item || !item->identifier) {
+            return;
+        }
+        gTitleFiles = newValue;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store \"%s\": %s (%d)", item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
+
     void theme_callback(ConfigItemMultipleValues *item, uint32_t newValue) {
         if (!item || newValue >= sThemeNames.size()) {
             return;
@@ -43,8 +54,8 @@ namespace {
         try {
             WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
 
-            if (StyleMiiUInstalled()) {
-                root.add(WUPSConfigItemStub::Create("Off while StyleMiiU is installed"));
+            if (StyleMiiUSwitchedOffThisBoot()) {
+                root.add(WUPSConfigItemStub::Create("StyleMiiU switched off: theme applies after a reboot"));
             }
             root.add(WUPSConfigItemBoolean::Create(PUMPKINSPICE_ENABLED_STRING, "Enabled",
                                                    DEFAULT_PUMPKINSPICE_ENABLED, gPumpkinSpiceEnabled,
@@ -65,6 +76,8 @@ namespace {
                 root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING, "Theme",
                                                                        0, current, sThemePairs, &theme_callback));
             }
+            root.add(WUPSConfigItemBoolean::Create(TITLE_FILES_STRING, "App icons and EULA", DEFAULT_TITLE_FILES, gTitleFiles,
+                                                   &title_files_callback));
             root.add(WUPSConfigItemStub::Create("Changes apply when the Wii U Menu restarts"));
         } catch (std::exception &e) {
             DEBUG_FUNCTION_LINE_ERR("Exception: %s\n", e.what());
@@ -86,6 +99,9 @@ void InitStorageAndConfig() {
     WUPSStorageError err;
     if ((err = WUPSStorageAPI::GetOrStoreDefault(PUMPKINSPICE_ENABLED_STRING, gPumpkinSpiceEnabled, DEFAULT_PUMPKINSPICE_ENABLED)) != WUPS_STORAGE_ERROR_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", PUMPKINSPICE_ENABLED_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    }
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(TITLE_FILES_STRING, gTitleFiles, DEFAULT_TITLE_FILES)) != WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", TITLE_FILES_STRING, WUPSStorageAPI_GetStatusStr(err), err);
     }
     if (WUPSStorageAPI::Get(ACTIVE_THEME_STRING, gActiveTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
         gActiveTheme.clear();

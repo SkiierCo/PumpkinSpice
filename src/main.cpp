@@ -35,12 +35,13 @@ ON_APPLICATION_START() {
         return;
     }
     SDLOG("=== Wii U Menu start %016llX, PumpkinSpice %s, enabled %d", OSGetTitleID(), VERSION_FULL, gPumpkinSpiceEnabled);
-    if (StyleMiiUInstalled()) {
-        SDLOG("StyleMiiU is installed: theme not applied");
-    } else if (gPumpkinSpiceEnabled) {
-        ApplyTheme();
+    if (!gPumpkinSpiceEnabled) {
+        DEBUG_FUNCTION_LINE("PumpkinSpice is disabled"); // StyleMiiU is left alone
+    } else if (SwitchOffStyleMiiU()) {
+        // renamed now, but loaded since boot: the two would clash this boot, the theme applies from the next one
+        SDLOG("StyleMiiU was loaded this boot: theme not applied until the next boot");
     } else {
-        DEBUG_FUNCTION_LINE("PumpkinSpice is disabled");
+        ApplyTheme();
     }
     SDLOG("ON_APPLICATION_START done");
 }

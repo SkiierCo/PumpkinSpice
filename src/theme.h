@@ -7,8 +7,12 @@
 // Theme folder names in THEMES_PATH, sorted.
 std::vector<std::string> ListThemes();
 
-// True when the StyleMiiU plugin (used by Themiify) is installed next to PumpkinSpice; PumpkinSpice then stays off.
-bool StyleMiiUInstalled();
+// Switches the StyleMiiU plugin (used by Themiify) off by renaming stylemiiu*.wps to .off next to PumpkinSpice's own
+// .wps. Checked once per boot. True if StyleMiiU was found: it is still loaded until the next boot.
+bool SwitchOffStyleMiiU();
+
+// True if SwitchOffStyleMiiU found (and renamed) StyleMiiU this boot.
+bool StyleMiiUSwitchedOffThisBoot();
 
 // True for the Wii U Menu (JPN, USA, EUR).
 bool IsWiiUMenu(uint64_t titleID);

@@ -12,8 +12,10 @@ Menu to get the stock Menu back.
   [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
   `sd:/wiiu/environments/aroma/modules`.
 - The `titles` folder (EULA text, app icons) needs ContentRedirectionModule API version 2 or newer.
-- No StyleMiiU (the plugin Themiify uses). Both theme the Wii U Menu, so PumpkinSpice stays off while `stylemiiu.wps`
-  is in the same plugins folder; its config menu shows "Off while StyleMiiU is installed".
+- StyleMiiU (the plugin Themiify uses) is switched off. Both theme the Wii U Menu, so while PumpkinSpice is enabled
+  it renames `stylemiiu.wps` in the same plugins folder to `stylemiiu.wps1`. StyleMiiU is still loaded until the
+  next boot, so on that boot the theme isn't applied and the config menu shows "StyleMiiU switched off: theme applies
+  after a reboot". To use StyleMiiU again, disable PumpkinSpice and rename the file back.
 
 ## Installation
 Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
@@ -22,25 +24,32 @@ Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
 Each theme is a folder in `sd:/wiiu/pumpkinspice/themes`:
 
 ```
-sd:/wiiu/pumpkinspice/themes/<Theme name>/content/...                      Wii U Menu files (/vol/content)
-sd:/wiiu/pumpkinspice/themes/<Theme name>/titles/<title ID>/<folder>/...   files of other titles
+sd:/wiiu/pumpkinspice/themes/<Theme name>/content/...                         Wii U Menu files (/vol/content)
+sd:/wiiu/pumpkinspice/themes/<Theme name>/titles/<high>/<low>/<folder>/...    files of other titles
 ```
 
 - `content` mirrors the Menu's `content` folder. Only the files the theme changes are needed; everything else comes
   from the Menu. Files the Menu doesn't have (e.g. a new music stream) are added.
-- `titles/<title ID>/<folder>` replaces files in that title's folder for the Wii U Menu, for files the Menu reads
-  from other titles. `<title ID>` is the 16-digit ID without the dash.
-  - EULA text: `titles/0005001b10050000/content/00/<language>/DeviceEula.msbt`
-  - App icons: `titles/<app title ID>/meta/iconTex.tga` (e.g. `0005001010047200` for EUR System Settings)
+- `titles/<high>/<low>/<folder>` replaces files in that title's folder for the Wii U Menu, for files the Menu reads
+  from other titles. `<high>` and `<low>` are the two 8-digit halves of the title ID, as in the system's own
+  `sys/title` folders.
+  - EULA text: `titles/0005001b/10050000/content/00/<language>/DeviceEula.msbt`
+  - App icons: `titles/<high>/<low>/meta/iconTex.tga` (e.g. `00050010/10047200` for EUR System Settings)
 - To hide a Menu file, add an empty file named `.deleted_<file name>` in the same folder.
+
+PumpkinSpice adds one layer for `content` and one for each `<high>` group (apps `00050010`, applets `00050030`, system
+data `0005001b`). Every layer opens a file system client in the Wii U Menu, and with many other plugins the Menu can
+run out of system handles: on such a console one layer per title made the Menu stop at startup. The older layout,
+`titles/<16-digit title ID>/<folder>`, still loads (one layer per folder); when a theme has `<high>` groups, folders
+in the older layout are skipped.
 
 Example (EUR):
 ```
 sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/Common/Package/Men.pack
 sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/Common/Sound/Men/stream/BGM_MEN.bfstm
 sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/content/EuEnglish/Message/AllMessage.szs
-sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001b10050000/content/00/EuEnglish/DeviceEula.msbt
-sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001010047200/meta/iconTex.tga
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/0005001b/10050000/content/00/EuEnglish/DeviceEula.msbt
+sd:/wiiu/pumpkinspice/themes/Persona Advanced RELOADED/titles/00050010/10047200/meta/iconTex.tga
 ```
 
 Title IDs differ by region (Wii U Menu: `0005001010040000` JPN, `0005001010040100` USA, `0005001010040200` EUR), so
@@ -69,33 +78,46 @@ plaza_ring_radius 150 115
 plaza_crowd_radius 70 140 35
 ```
 
-Supported Wii U Menu code: USA 5.5.x and EUR 5.5.5 stock, and the TVii (OG Menu) patched Menu. The plugin asks the
-system where `men.rpx` is loaded (its RPL list), checks the exact instructions and values at every place it changes,
-and writes them through the kernel. If the running Menu doesn't match a supported build (another build, or a Menu that
-is already modified) the code patches are skipped and only the files are loaded. Requires the KernelModule (part of
-Aroma).
+The plugin asks the system where `men.rpx` is loaded (its RPL list) and searches its code for each place it changes,
+by the surrounding instructions (`src/menu_patterns.h`; addresses and branch offsets left out), so a place is found
+wherever it is: in the USA 5.5.x and EUR 5.5.5 stock Menus, the TVii (OG Menu) patched Menu, and a Menu modified
+elsewhere. Each patch is applied only if all of its code is there and found exactly once; one that isn't (for example
+code another mod already changed, or plaza radii that aren't the stock values) is skipped and the others still apply.
+Changes are written through the kernel. Requires the KernelModule (part of Aroma).
 
 ## Settings
 Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
 - **Enabled**: turns theme loading on or off.
 - **Theme**: the theme to load. Without a choice, the first theme folder (alphabetical) is used.
+- **App icons and EULA**: loads the theme's `titles` folder. Off, only `content` is loaded (one layer), for a console
+  where the Wii U Menu still stops at startup with the theme on.
 
-Changes apply the next time the Wii U Menu starts. With StyleMiiU installed, the menu shows "Off while StyleMiiU is
-installed" and nothing is loaded.
+Changes apply the next time the Wii U Menu starts. On the boot where PumpkinSpice switched StyleMiiU off, the menu
+shows "StyleMiiU switched off: theme applies after a reboot".
 
 ## Logging
 `make` logs errors only (via OSReport). `make DEBUG=1` adds information logging and `make DEBUG=VERBOSE` verbose
 logging via the [LoggingModule](https://github.com/wiiu-env/LoggingModule) (falls back to UDP port 4405 and CafeOS
 logging if the module is missing).
 
-`make SDLOG=1` also writes a step-by-step log to `sd:/wiiu/pumpkinspice/log.txt` (theme, layers, the Menu build found,
-every code patch write and its read-back); each line is written and closed on its own, so the log survives a hang.
+`make SDLOG=1` also writes a step-by-step log to `sd:/wiiu/pumpkinspice/log.txt` (theme, layers, where each place
+was found in the Menu code, every code patch write and its read-back); each line is written and closed on its own, so
+the log survives a hang.
 At each boot the last boot's log moves to `log-previous.txt` (so the log of a boot that crashed is kept) and older logs
 are deleted.
 
 ## Changes
 **Next version**
+- Fewer layers for the `titles` folder: one per title group (`titles/<high>/<low>/...`) instead of one per title
+  (Persona Advanced RELOADED: 4 layers instead of 15; with 15, a console with many other plugins stopped at startup,
+  halt 248). The older `titles/<16-digit ID>/...` layout still loads. New setting **App icons and EULA** to leave the
+  `titles` folder out.
+- PumpkinSpice switches StyleMiiU off (renames `stylemiiu.wps` to `stylemiiu.wps1`) instead of staying off itself;
+  the theme applies from the boot after.
 - The SD card log (`make SDLOG=1`) keeps only this boot's and the previous boot's log instead of growing.
+- Code patches find their places in the Menu by code patterns instead of a fixed address table per build, so they
+  also work on a Menu modified elsewhere; each patch is skipped on its own when its code isn't found, instead of all
+  of them. `tests/scan_test.cpp` checks the search on Menu images (moved, modified, already patched).
 
 **v1.2**
 - New code patch `shrink_long_titles`: a launcher title that wraps or has its own line break is scaled down to about
