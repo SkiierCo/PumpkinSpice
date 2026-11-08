@@ -5,13 +5,13 @@
 #include <stdarg.h>
 #include <stdio.h>
 
-#define SDLOG_PATH "fs:/vol/external01/wiiu/pumpkinspice/log.txt"
+#define SDLOG_PATH          "fs:/vol/external01/wiiu/pumpkinspice/log.txt"
+#define SDLOG_PREVIOUS_PATH "fs:/vol/external01/wiiu/pumpkinspice/log-previous.txt"
 
-void SdLogClear(void) {
-    FILE *f = fopen(SDLOG_PATH, "w");
-    if (f) {
-        fclose(f);
-    }
+void SdLogNewBoot(void) {
+    // log.txt becomes log-previous.txt (the boot before, e.g. the one that crashed); older logs are deleted
+    remove(SDLOG_PREVIOUS_PATH);
+    rename(SDLOG_PATH, SDLOG_PREVIOUS_PATH);
 }
 
 void SdLog(const char *fmt, ...) {

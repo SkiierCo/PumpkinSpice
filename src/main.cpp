@@ -25,6 +25,7 @@ INITIALIZE_PLUGIN() {
 
     InitStorageAndConfig();
     gLayerHandles.clear();
+    SDLOG_NEW_BOOT(); // plugins load once per boot
     SDLOG("=== PumpkinSpice %s loaded", VERSION_FULL);
 }
 

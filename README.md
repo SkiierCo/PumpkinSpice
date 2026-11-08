@@ -90,8 +90,13 @@ logging if the module is missing).
 
 `make SDLOG=1` also writes a step-by-step log to `sd:/wiiu/pumpkinspice/log.txt` (theme, layers, the Menu build found,
 every code patch write and its read-back); each line is written and closed on its own, so the log survives a hang.
+At each boot the last boot's log moves to `log-previous.txt` (so the log of a boot that crashed is kept) and older logs
+are deleted.
 
 ## Changes
+**Next version**
+- The SD card log (`make SDLOG=1`) keeps only this boot's and the previous boot's log instead of growing.
+
 **v1.2**
 - New code patch `shrink_long_titles`: a launcher title that wraps or has its own line break is scaled down to about
   one line's height (at least 0.55) so it fits the theme's title banner; one-line titles stay full size. Hooks the
