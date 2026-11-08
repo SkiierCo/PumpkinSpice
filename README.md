@@ -24,24 +24,23 @@ Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
 Each theme is a folder in `sd:/wiiu/pumpkinspice/themes`:
 
 ```
-sd:/wiiu/pumpkinspice/themes/<Theme name>/content/...                         Wii U Menu files (/vol/content)
-sd:/wiiu/pumpkinspice/themes/<Theme name>/titles/<high>/<low>/<folder>/...    files of other titles
+sd:/wiiu/pumpkinspice/themes/<Theme name>/content/...                Wii U Menu files
+sd:/wiiu/pumpkinspice/themes/<Theme name>/titles/<title ID>/...      files of other apps (icons, EULA)
 ```
 
 - `content` mirrors the Menu's `content` folder. Only the files the theme changes are needed; everything else comes
   from the Menu. Files the Menu doesn't have (e.g. a new music stream) are added.
-- `titles/<high>/<low>/<folder>` replaces files in that title's folder for the Wii U Menu, for files the Menu reads
-  from other titles. `<high>` and `<low>` are the two 8-digit halves of the title ID, as in the system's own
-  `sys/title` folders.
+- `titles` holds files the Menu shows from other apps. A title ID is split into two folders, its first 8 digits and
+  its last 8 digits, the same way the console stores it: System Settings (EUR) `00050010-10047200` is
+  `titles/00050010/10047200`.
+  - App icon: `titles/00050010/10047200/meta/iconTex.tga`
   - EULA text: `titles/0005001b/10050000/content/00/<language>/DeviceEula.msbt`
-  - App icons: `titles/<high>/<low>/meta/iconTex.tga` (e.g. `00050010/10047200` for EUR System Settings)
 - To hide a Menu file, add an empty file named `.deleted_<file name>` in the same folder.
 
-PumpkinSpice adds one layer for `content` and one for each `<high>` group (apps `00050010`, applets `00050030`, system
-data `0005001b`). Every layer opens a file system client in the Wii U Menu, and with many other plugins the Menu can
-run out of system handles: on such a console one layer per title made the Menu stop at startup. The older layout,
-`titles/<16-digit title ID>/<folder>`, still loads (one layer per folder); when a theme has `<high>` groups, folders
-in the older layout are skipped.
+PumpkinSpice loads `content` plus one group of `titles` per first-8-digit folder (`00050010` apps, `00050030`
+applets, `0005001b` system data). Loading every app separately made the Menu stop at startup on consoles with many
+other plugins. The older layout, `titles/<16-digit title ID>/...`, still loads, but is skipped when a theme also uses
+the two-folder layout.
 
 Example (EUR):
 ```
@@ -67,6 +66,9 @@ plaza_offset <x> <z>                          Wara Wara Plaza icon ring and cent
 plaza_ring_radius <x> <z>                     icon ring radii (stock 190 180)
 plaza_crowd_radius <outer> <outer2> <inner>   Mii crowd scatter radii (stock 150 300 50)
 ```
+
+`folder_footer_color` only works with the updated version of Leon Pascal's folder edit; it has no effect on the
+default folders.
 
 Example (Persona Advanced RELOADED):
 ```
@@ -109,7 +111,8 @@ are deleted.
 ## Changes
 **v1.3**
 - JPN Wii U Menu: the code patches find every place in JPN 5.5.5 too (checked with the same patterns).
-- Fewer layers for the `titles` folder: one per title group (`titles/<high>/<low>/...`) instead of one per title
+- Fewer layers for the `titles` folder: one per group (`titles/<first 8 digits>/<last 8 digits>/...`) instead of one
+  per title
   (Persona Advanced RELOADED: 4 layers instead of 15; with 15, a console with many other plugins stopped at startup,
   halt 248). The older `titles/<16-digit ID>/...` layout still loads. New setting **App icons and EULA** to leave the
   `titles` folder out.
