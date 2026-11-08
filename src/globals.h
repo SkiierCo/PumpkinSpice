@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#define VERSION                      "v1.2"
+#define VERSION                      "v1.3"
 #define VERSION_FULL                 VERSION VERSION_EXTRA
 
 #define PUMPKINSPICE_ENABLED_STRING  "pumpkinSpiceEnabled"

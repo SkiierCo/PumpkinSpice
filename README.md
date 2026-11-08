@@ -7,7 +7,7 @@ Menu runs; nothing on the console's storage is changed. Turn PumpkinSpice off (o
 Menu to get the stock Menu back.
 
 ## Requirements
-- A USA or EUR Wii U Menu. There's no JPN support.
+- A JPN, USA or EUR Wii U Menu (code patches checked against JPN 5.5.5, USA 5.5.x, EUR 5.5.5 and the TVii Menu).
 - Aroma with the [WiiUPluginLoaderBackend](https://github.com/wiiu-env/WiiUPluginLoaderBackend) and the
   [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
   `sd:/wiiu/environments/aroma/modules`.
@@ -107,7 +107,8 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
-**Next version**
+**v1.3**
+- JPN Wii U Menu: the code patches find every place in JPN 5.5.5 too (checked with the same patterns).
 - Fewer layers for the `titles` folder: one per title group (`titles/<high>/<low>/...`) instead of one per title
   (Persona Advanced RELOADED: 4 layers instead of 15; with 15, a console with many other plugins stopped at startup,
   halt 248). The older `titles/<16-digit ID>/...` layout still loads. New setting **App icons and EULA** to leave the
