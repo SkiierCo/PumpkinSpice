@@ -1,15 +1,20 @@
 #include "theme.h"
+#include "bootscreen.h"
 #include "codepatch.h"
 #include "globals.h"
+#include "package.h"
 #include "utils/logger.h"
 #include "utils/sdlog.h"
 #include <algorithm>
 #include <cctype>
 #include <content_redirection/redirection.h>
+#include <coreinit/thread.h>
+#include <coreinit/time.h>
 #include <cstdio>
 #include <cstring>
 #include <dirent.h>
 #include <sys/stat.h>
+#include <vpad/input.h>
 
 namespace {
 
@@ -130,8 +135,31 @@ namespace {
 
 } // namespace
 
+// Theme folders and packages (<name>.ps, listed as <name>), sorted; a name that is both appears once.
 std::vector<std::string> ListThemes() {
-    return ListDirs(THEMES_PATH);
+    std::vector<std::string> out = ListDirs(THEMES_PATH);
+    // <name>.building / <name>.replaced: a package being turned into a theme folder, and the old folder it replaces
+    // (left behind only by an interrupted first start)
+    out.erase(std::remove_if(out.begin(), out.end(),
+                             [](const std::string &n) {
+                                 return n.size() > 9 && (n.compare(n.size() - 9, 9, ".building") == 0 ||
+                                                         n.compare(n.size() - 9, 9, ".replaced") == 0);
+                             }),
+              out.end());
+    if (DIR *dir = opendir(THEMES_PATH)) {
+        while (auto *entry = readdir(dir)) {
+            const std::string name = entry->d_name;
+            if (name.size() > 3 && Upper(name.substr(name.size() - 3)) == ".PS" && IsFile(std::string(THEMES_PATH) + "/" + name)) {
+                const std::string theme = name.substr(0, name.size() - 3);
+                if (std::find(out.begin(), out.end(), theme) == out.end()) {
+                    out.push_back(theme);
+                }
+            }
+        }
+        closedir(dir);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
 }
 
 namespace {
@@ -202,19 +230,91 @@ bool IsWiiUMenu(uint64_t titleID) {
     return titleID == 0x0005001010040000ULL || titleID == 0x0005001010040100ULL || titleID == 0x0005001010040200ULL;
 }
 
-void ApplyTheme() {
-    const auto themes = ListThemes();
-    if (themes.empty()) {
-        DEBUG_FUNCTION_LINE("No themes in %s", THEMES_PATH);
-        return;
+namespace {
+    // the screens while a package is prepared (bootscreen.h), in the style of SDCafiine's "Preparing modpack" screen
+    void DrawPreparing(const std::string &theme, int file, int files) {
+        ScreenClear();
+        ScreenPrint(-2, -1, "PumpkinSpice " VERSION_FULL);
+        ScreenPrint(-2, 1, "Preparing theme \"%s\"...", theme.c_str());
+        ScreenPrint(-2, 3, "First start of this theme: its files are built from this");
+        ScreenPrint(-2, 4, "console's Wii U Menu files. This can take a minute.");
+        ScreenPrint(-2, 5, "Do not turn off the console.");
+        if (files > 0) {
+            ScreenPrint(-2, 7, "File %d of %d", file, files);
+        }
+        ScreenFlip();
     }
-    std::string theme = gActiveTheme;
-    if (std::find(themes.begin(), themes.end(), theme) == themes.end()) {
-        theme = themes.front();
+
+    void ShowPrepareFailed(const std::string &theme, const std::string &why, bool fallback) {
+        ScreenClear();
+        ScreenPrint(-2, -1, "PumpkinSpice " VERSION_FULL);
+        ScreenPrint(-2, 1, "Theme \"%s\" could not be prepared:", theme.c_str());
+        // the reason, wrapped at spaces to fit the GamePad
+        int y            = 2;
+        std::string rest = why.empty() ? std::string("unknown error") : why;
+        while (!rest.empty() && y < 6) {
+            size_t cut = rest.size();
+            if (cut > 60) {
+                cut = rest.rfind(' ', 60);
+                cut = (cut == std::string::npos || cut == 0) ? 60 : cut;
+            }
+            ScreenPrint(-2, y++, "%s", rest.substr(0, cut).c_str());
+            rest = rest.substr(cut < rest.size() && rest[cut] == ' ' ? cut + 1 : cut);
+        }
+        ScreenPrint(-2, y + 1, "The package stays on the SD card and is tried again");
+        ScreenPrint(-2, y + 2, "the next time the Wii U Menu starts.");
+        ScreenPrint(-2, y + 4, fallback ? "Starting with the files already in the theme folder." : "Starting the Wii U Menu without a theme.");
+        ScreenPrint(-2, y + 6, "Press A to continue");
+        ScreenFlip();
+
+        InputInit();
+        const OSTime start = OSGetTime();
+        while (!(ReadButtonsTriggered() & VPAD_BUTTON_A) && OSTicksToMilliseconds(OSGetTime() - start) < 15000) {
+            OSSleepTicks(OSMillisecondsToTicks(16));
+        }
+        InputDeInit();
     }
-    const std::string themePath = std::string(THEMES_PATH) + "/" + theme;
-    DEBUG_FUNCTION_LINE("Applying theme \"%s\"", theme.c_str());
-    SDLOG("theme \"%s\"", theme.c_str());
+} // namespace
+
+void ApplyTheme(const std::string &theme) {
+    // a package (a .ps in the theme folder) becomes the regular theme folder on its first start (package.h); if that
+    // fails, what is in the folder is used as it is
+    std::string themePath     = std::string(THEMES_PATH) + "/" + theme;
+    const std::string package = FindPackage(THEMES_PATH, theme);
+    if (!package.empty()) {
+        SDLOG("theme \"%s\" (package %s)", theme.c_str(), package.c_str());
+        const bool screen = ScreenInit();
+        OSTime lastDraw   = 0;
+        if (screen) {
+            DrawPreparing(theme, 0, 0);
+        }
+        const PackageProgress progress = [&](int file, int files) {
+            // redrawn at most 10 times a second (a flip waits for the screen)
+            if (file == files || OSTicksToMilliseconds(OSGetTime() - lastDraw) >= 100) {
+                DrawPreparing(theme, file, files);
+                lastDraw = OSGetTime();
+            }
+        };
+        std::string why;
+        const bool prepared = !PreparePackage(THEMES_PATH, theme, package, screen ? progress : nullptr, &why).empty();
+        if (!prepared) {
+            const bool fallback = IsDirectory(themePath);
+            if (screen) {
+                ShowPrepareFailed(theme, why, fallback);
+            }
+            ScreenDeInit();
+            if (!fallback) {
+                DEBUG_FUNCTION_LINE_ERR("Theme package \"%s\" could not be used", theme.c_str());
+                return;
+            }
+            SDLOG("package \"%s\" not usable this time: the existing theme folder is loaded", theme.c_str());
+        } else {
+            ScreenDeInit();
+        }
+    } else {
+        SDLOG("theme \"%s\"", theme.c_str());
+    }
+    DEBUG_FUNCTION_LINE("Applying theme \"%s\" from %s", theme.c_str(), themePath.c_str());
     AddContentLayer(themePath);
     if (gTitleFiles) {
         AddTitleLayers(themePath);

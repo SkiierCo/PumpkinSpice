@@ -7,7 +7,7 @@ Menu runs; nothing on the console's storage is changed. Turn PumpkinSpice off (o
 Menu to get the stock Menu back.
 
 ## Requirements
-- A JPN, USA or EUR Wii U Menu (code patches checked against JPN 5.5.5, USA 5.5.x, EUR 5.5.5 and the TVii Menu).
+- A JPN, USA or EUR Wii U Menu (code patches checked against JPN 5.5.5, USA 5.5.5, EUR 5.5.5 and the TVii Menu).
 - Aroma with the [WiiUPluginLoaderBackend](https://github.com/wiiu-env/WiiUPluginLoaderBackend) and the
   [ContentRedirectionModule](https://github.com/wiiu-env/ContentRedirectionModule) in
   `sd:/wiiu/environments/aroma/modules`.
@@ -19,6 +19,22 @@ Menu to get the stock Menu back.
 
 ## Installation
 Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
+
+## Theme packages (`.ps`)
+A theme can be shipped as its folder with one file in it, `sd:/wiiu/pumpkinspice/themes/<Theme name>/<Theme name>.ps`
+(or `themes/<Theme name>.ps`). Packages are similar to BPS patches, but more streamlined and integrated with the
+console and tools: there is nothing to patch by hand, so a downloaded theme can be used right away. A package holds
+only the theme's own work, no Nintendo files. On the first start with a package, PumpkinSpice rebuilds
+the finished files from the console's own Wii U Menu files into that folder (`content`, `titles`, `code.txt`) and
+deletes the `.ps`; from then on it is a regular theme. Only the console's region (from the running Menu) is rebuilt,
+plus the files every region shares. A file whose stock version on the console isn't the one the package was made from
+is skipped and logged. If the rebuild fails, or the console is turned off during it, nothing changes and the `.ps` is
+tried again on the next start. To update a theme, put the new `.ps` into its folder: the old theme is deleted once the
+new one is in place. Format: `docs/PS-FORMAT.md`.
+
+Packages are made with LatteLab, from a theme folder laid out as below and the stock files of each region it covers.
+LatteLab can also rebuild a package the same way. The format code is in `lib/wiiumenu` (shared with
+LatteLab).
 
 ## Themes
 Each theme is a folder in `sd:/wiiu/pumpkinspice/themes`:
@@ -63,8 +79,8 @@ page1_hide_right_arrow                        launcher page 1: the right arrow s
 folder_footer_color                           folder name bar, settings and back corners take the folder color
 shrink_long_titles                            launcher titles longer than one line shrink to about one line (min 0.55)
 plaza_offset <x> <z>                          Wara Wara Plaza icon ring and centre moved by (x, z); -z moves it up
-plaza_ring_radius <x> <z>                     icon ring radii (stock 190 180)
-plaza_crowd_radius <outer> <outer2> <inner>   Mii crowd scatter radii (stock 150 300 50)
+plaza_ring_radius <x> <z>                     icon ring radius (stock 190 180)
+plaza_crowd_radius <outer> <outer2> <inner>   Mii crowd scatter radius (stock 150 300 50)
 ```
 
 `folder_footer_color` only works with the updated version of Leon Pascal's folder edit; it has no effect on the
@@ -82,10 +98,21 @@ plaza_crowd_radius 70 140 35
 
 The plugin asks the system where `men.rpx` is loaded (its RPL list) and searches its code for each place it changes,
 by the surrounding instructions (`src/menu_patterns.h`; addresses and branch offsets left out), so a place is found
-wherever it is: in the USA 5.5.x and EUR 5.5.5 stock Menus, the TVii (OG Menu) patched Menu, and a Menu modified
+wherever it is: in the JPN, USA and EUR 5.5.5 stock Menus, the TVii (OG Menu) patched Menu, and a Menu modified
 elsewhere. Each patch is applied only if all of its code is there and found exactly once; one that isn't (for example
-code another mod already changed, or plaza radii that aren't the stock values) is skipped and the others still apply.
+code another mod already changed, or a plaza radius that isn't the stock value) is skipped and the others still apply.
 Changes are written through the kernel. Requires the KernelModule (part of Aroma).
+
+## Theme selector
+When the Wii U Menu starts for the first time after a boot, PumpkinSpice shows SDCafiine's selector with the themes
+on the SD card: A starts the selected theme, B starts without a theme, L/R change the page. The theme picked becomes
+the **Theme** setting. MINUS turns autostart on or off for the selected theme (the one with the arrow; marked
+"(autostart)"). With autostart on, that theme starts after "Preparing theme..." without the list; press MINUS there to
+open the list. Holding MINUS while the console starts clears autostart and shows the list. Returning to the Menu from a
+game uses the same choice.
+
+While a theme package is prepared, a screen shows the progress (first start of that theme only; don't turn the console
+off). If it fails, a screen shows the reason and says whether the Menu starts without the theme; press A to continue.
 
 ## Settings
 Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
@@ -93,8 +120,11 @@ Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
 - **Theme**: the theme to load. Without a choice, the first theme folder (alphabetical) is used.
 - **App icons and EULA**: loads the theme's `titles` folder. Off, only `content` is loaded (one layer), for a console
   where the Wii U Menu still stops at startup with the theme on.
+- **Advanced settings**: **Autostart theme** (Off, or the theme the selector starts by itself) and **Skip "Preparing
+  theme..." screen** (the autostart theme starts with no screen; off by default).
 
-Changes apply the next time the Wii U Menu starts. On the boot where PumpkinSpice switched StyleMiiU off, the menu
+Changes apply the next time the Wii U Menu starts. A new **Theme** chosen in the Wii U Menu restarts the Menu when the
+config menu is closed, so the theme loads right away. On the boot where PumpkinSpice switched StyleMiiU off, the menu
 shows "StyleMiiU switched off: theme applies after a reboot".
 
 ## Logging
@@ -109,6 +139,17 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
+**v1.4**
+- Theme packages (`.ps`, made with LatteLab): similar to BPS patches, but more streamlined and integrated with the
+  console and tools, so a downloaded theme can be used right away. On the first start PumpkinSpice rebuilds the files
+  for the console's region from its own Menu files and the package becomes a regular theme folder. See "Theme
+  packages".
+- Theme selector at the first Wii U Menu start (SDCafiine's selector, for themes), with autostart for a chosen theme;
+  hold MINUS at startup to clear it. See "Theme selector".
+- A screen shows the progress while a package is prepared, and the reason if it fails.
+- New settings **Autostart theme** and **Skip "Preparing theme..." screen** under Advanced settings.
+- Changing the **Theme** in the config menu restarts the Wii U Menu when the config menu closes.
+
 **v1.3**
 - JPN Wii U Menu: the code patches find every place in JPN 5.5.5 too (checked with the same patterns).
 - Fewer layers for the `titles` folder: one per group (`titles/<first 8 digits>/<last 8 digits>/...`) instead of one

@@ -17,8 +17,9 @@ bool StyleMiiUSwitchedOffThisBoot();
 // True for the Wii U Menu (JPN, USA, EUR).
 bool IsWiiUMenu(uint64_t titleID);
 
-// Applies the selected theme (or the first one found) to the running Wii U Menu.
-void ApplyTheme();
+// Applies a theme (a name from ListThemes) to the running Wii U Menu. A theme package is prepared first, with a
+// screen saying so, and a screen with the reason if that fails.
+void ApplyTheme(const std::string &theme);
 
 // Removes every layer ApplyTheme added.
 void RemoveTheme();

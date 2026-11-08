@@ -1,0 +1,170 @@
+// SDCafiine's HandleMultiModPacks (modpackSelector.cpp), for themes instead of a game's modpacks. SDCafiine's
+// autostart was for a single modpack only; here MINUS sets autostart for the selected theme, with any number of themes.
+#include "themeSelector.h"
+#include "bootscreen.h"
+#include "globals.h"
+#include "utils/logger.h"
+#include "utils/sdlog.h"
+#include <algorithm>
+#include <coreinit/thread.h>
+#include <coreinit/time.h>
+#include <vpad/input.h>
+#include <wups/storage.h>
+
+#define TEXT_SEL(x, text1, text2) ((x) ? (text1) : (text2))
+
+namespace {
+    void StoreString(const char *key, std::string &global, const std::string &value) {
+        if (global == value) {
+            return;
+        }
+        global = value;
+        if (WUPSStorageAPI::Store(key, global) == WUPS_STORAGE_ERROR_SUCCESS) {
+            if (WUPSStorageAPI::SaveStorage() != WUPS_STORAGE_ERROR_SUCCESS) {
+                DEBUG_FUNCTION_LINE_ERR("Failed to close storage");
+            }
+        } else {
+            DEBUG_FUNCTION_LINE_WARN("Failed to save to storage");
+        }
+    }
+} // namespace
+
+std::string SelectTheme(const std::vector<std::string> &themes) {
+    if (themes.empty()) {
+        return "";
+    }
+    InputInit();
+    // MINUS held while the Menu starts: autostart is cleared and the list is shown
+    if (!gAutostartTheme.empty() && (ReadButtonsHeld() & VPAD_BUTTON_MINUS)) {
+        SDLOG("theme selector: MINUS held, autostart (\"%s\") cleared", gAutostartTheme.c_str());
+        StoreString(AUTOSTART_THEME_STRING, gAutostartTheme, "");
+    }
+    const bool autostart = std::find(themes.begin(), themes.end(), gAutostartTheme) != themes.end();
+    if (autostart && gSkipPrepareScreen) {
+        InputDeInit();
+        return gAutostartTheme;
+    }
+
+    // the autostart theme, else the theme selected in the config menu, is selected here at first
+    int selected = 0;
+    if (auto it = std::find(themes.begin(), themes.end(), autostart ? gAutostartTheme : gActiveTheme); it != themes.end()) {
+        selected = int(it - themes.begin());
+    }
+    int initScreen = 1;
+    int x_offset   = -2;
+
+    int page      = 0;
+    int per_page  = 11;
+    int max_pages = (themes.size() / per_page) + (themes.size() % per_page != 0 ? 1 : 0);
+
+    int curState = autostart ? 1 : 0;
+
+    // "Preparing theme" for the autostart theme: 1 second to press MINUS (SDCafiine: 60 frames)
+    const OSTime prepareStart = OSGetTime();
+    std::string result;
+
+    if (!ScreenInit()) {
+        InputDeInit();
+        SDLOG("theme selector: no screen, using \"%s\"", themes[selected].c_str());
+        return themes[selected];
+    }
+
+    while (true) {
+        const uint32_t buttonsTriggered = ReadButtonsTriggered();
+
+        if (curState == 1) {
+            if (buttonsTriggered & VPAD_BUTTON_MINUS) {
+                curState   = 0;
+                initScreen = 1;
+                continue;
+            }
+
+            if (initScreen) {
+                ScreenClear();
+                ScreenPrint(x_offset, -1, "PumpkinSpice " VERSION_FULL);
+                ScreenPrint(x_offset, 1, "Preparing theme \"%s\"...", gAutostartTheme.c_str());
+                ScreenPrint(x_offset, 3, "Press MINUS to open menu");
+                ScreenFlip();
+                initScreen = 0;
+            }
+
+            if (OSTicksToMilliseconds(OSGetTime() - prepareStart) >= 1000) {
+                result = gAutostartTheme;
+                break;
+            }
+        } else {
+            bool wantToExit = false;
+            if (buttonsTriggered & VPAD_BUTTON_A) {
+                wantToExit = true;
+            } else if (buttonsTriggered & VPAD_BUTTON_MINUS) {
+                ScreenClear();
+                ScreenPrint(x_offset, -1, "PumpkinSpice " VERSION_FULL);
+                ScreenPrint(x_offset, 1, "Save settings...");
+                ScreenFlip();
+
+                // the selected theme becomes the autostart theme, or autostart is turned off if it already is
+                StoreString(AUTOSTART_THEME_STRING, gAutostartTheme, gAutostartTheme == themes[selected] ? "" : themes[selected]);
+                initScreen = 1;
+            } else if (buttonsTriggered & VPAD_BUTTON_B) {
+                SDLOG("theme selector: started without a theme");
+                break;
+            } else if (buttonsTriggered & VPAD_BUTTON_DOWN) {
+                selected++;
+                initScreen = 1;
+            } else if (buttonsTriggered & VPAD_BUTTON_UP) {
+                selected--;
+                initScreen = 1;
+            } else if (buttonsTriggered & VPAD_BUTTON_L) {
+                selected -= per_page;
+                initScreen = 1;
+            } else if (buttonsTriggered & VPAD_BUTTON_R) {
+                selected += per_page;
+                initScreen = 1;
+            }
+            if (selected < 0) {
+                selected = 0;
+            }
+            if (selected >= (int) themes.size()) {
+                selected = themes.size() - 1;
+            }
+            page = selected / per_page;
+
+            if (wantToExit) {
+                result = themes[selected];
+                StoreString(ACTIVE_THEME_STRING, gActiveTheme, result);
+                break;
+            }
+
+            if (initScreen) {
+                ScreenClear();
+                ScreenPrint(x_offset, -1, "PumpkinSpice " VERSION_FULL);
+                ScreenPrint(x_offset, 1, "Press A to launch a theme");
+                ScreenPrint(x_offset, 2, "Press B to launch without a theme");
+                if (gAutostartTheme == themes[selected]) {
+                    ScreenPrint(x_offset, 4, "Press MINUS to disable autostart for the selected theme");
+                } else {
+                    ScreenPrint(x_offset, 4, "Press MINUS to enable autostart for the selected theme");
+                }
+                int y_offset = 6;
+                for (int cur = page * per_page; cur < (int) themes.size() && cur < (page + 1) * per_page; cur++) {
+                    ScreenPrint(x_offset, y_offset++, "%s %s%s", TEXT_SEL((selected == cur), "--->", "    "), themes[cur].c_str(),
+                                TEXT_SEL((gAutostartTheme == themes[cur]), " (autostart)", ""));
+                }
+
+                if (max_pages > 0) {
+                    ScreenPrint(x_offset, 17, "Page %02d/%02d. Press L/R to change page.", page + 1, max_pages);
+                }
+                ScreenFlip();
+                initScreen = 0;
+            }
+        }
+        OSSleepTicks(OSMillisecondsToTicks(16));
+    }
+
+    ScreenDeInit();
+    InputDeInit();
+    if (!result.empty()) {
+        SDLOG("theme selector: \"%s\"", result.c_str());
+    }
+    return result;
+}

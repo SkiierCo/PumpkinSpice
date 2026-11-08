@@ -23,9 +23,10 @@ WUMS_ROOT := $(DEVKITPRO)/wums
 TARGET		:=	pumpkinspice
 BUILD		:=	build
 SOURCES		:=	src \
-                src/utils
+                src/utils \
+                lib/wiiumenu/src
 DATA		:=	data
-INCLUDES	:=	src
+INCLUDES	:=	src lib/wiiumenu/include
 
 #-------------------------------------------------------------------------------
 # options for code generation
