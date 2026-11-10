@@ -15,7 +15,8 @@ Menu to get the stock Menu back.
 - StyleMiiU (the plugin Themiify uses) is switched off. Both theme the Wii U Menu, so while PumpkinSpice is enabled
   it renames `stylemiiu.wps` in the same plugins folder to `stylemiiu.wps1`. StyleMiiU is still loaded until the
   next boot, so on that boot the theme isn't applied and the config menu shows "StyleMiiU switched off: theme applies
-  after a reboot". To use StyleMiiU again, disable PumpkinSpice and rename the file back.
+  after a reboot". To use StyleMiiU again, disable PumpkinSpice: it renames the file back, and StyleMiiU loads from
+  the next boot.
 
 ## Installation
 Copy `pumpkinspice.wps` into `sd:/wiiu/environments/aroma/plugins`.
@@ -139,6 +140,12 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
+**v1.4.1**
+- Someone brought to my attention that it would be in good faith to have the ability to reenable StyleMiiU without
+  opening your SD Card and renaming it again so PumpkinSpice now reenables StyleMiiU when disabled.
+- Side Note : I have nothing against StyleMiiU and it's maintainers, I originally just disabled it entirely because it
+  messed with PumpkinSpice.
+
 **v1.4**
 - Theme packages (`.ps`, made with LatteLab): similar to BPS patches, but more streamlined and integrated with the
   console and tools, so a downloaded theme can be used right away. On the first start PumpkinSpice rebuilds the files

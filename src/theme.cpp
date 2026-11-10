@@ -163,12 +163,67 @@ std::vector<std::string> ListThemes() {
 }
 
 namespace {
-    int sStyleMiiUFound = -1; // -1 not checked yet this boot, 0 no, 1 found (and renamed)
+    int sStyleMiiUAtBoot = -1; // -1 not checked yet this boot, 0 no, 1 stylemiiu*.wps was there (loaded this boot)
+
+    std::string Lower(std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+        return s;
+    }
 
     bool IsWps(const std::string &lowerName, const char *prefix) {
         const size_t n = strlen(prefix);
         return lowerName.size() >= n + 4 && lowerName.compare(0, n, prefix) == 0 &&
                lowerName.compare(lowerName.size() - 4, 4, ".wps") == 0;
+    }
+
+    // stylemiiu*.wps1 .. stylemiiu*.wps9: StyleMiiU as SwitchOffStyleMiiU leaves it
+    bool IsSwitchedOffStyleMiiU(const std::string &lowerName) {
+        return !lowerName.empty() && lowerName.back() >= '1' && lowerName.back() <= '9' &&
+               IsWps(lowerName.substr(0, lowerName.size() - 1), "stylemiiu");
+    }
+
+    using PluginFolders = std::vector<std::pair<std::string, std::vector<std::string>>>;
+
+    // Every environment's plugins folder that holds PumpkinSpice's own .wps, with the file names in it (sorted).
+    PluginFolders PluginFoldersWithPumpkinSpice() {
+        PluginFolders out;
+        const std::string envs = "fs:/vol/external01/wiiu/environments";
+        for (const auto &env : ListDirs(envs)) {
+            const std::string plugins = envs + "/" + env + "/plugins";
+            DIR *dir                  = opendir(plugins.c_str());
+            if (!dir) {
+                continue;
+            }
+            bool ours = false;
+            std::vector<std::string> names;
+            while (auto *entry = readdir(dir)) {
+                names.emplace_back(entry->d_name);
+                if (IsWps(Lower(entry->d_name), "pumpkinspice")) {
+                    ours = true;
+                }
+            }
+            closedir(dir);
+            if (ours) {
+                std::sort(names.begin(), names.end());
+                out.emplace_back(plugins, std::move(names));
+            }
+        }
+        return out;
+    }
+
+    // The first look of a boot, before anything is renamed, tells whether Aroma loaded StyleMiiU at this boot.
+    void CheckStyleMiiUAtBoot(const PluginFolders &folders) {
+        if (sStyleMiiUAtBoot >= 0) {
+            return;
+        }
+        sStyleMiiUAtBoot = 0;
+        for (const auto &folder : folders) {
+            for (const auto &name : folder.second) {
+                if (IsWps(Lower(name), "stylemiiu")) {
+                    sStyleMiiUAtBoot = 1;
+                }
+            }
+        }
     }
 } // namespace
 
@@ -176,39 +231,16 @@ namespace {
 // switches it off: in every environment's plugins folder that also holds PumpkinSpice's own .wps, stylemiiu*.wps is
 // renamed to <name>1 (stylemiiu.wps1: Aroma only loads .wps files; names compared without case; if that name is taken,
 // the next free <name>2 .. <name>9 is used, so no file is overwritten).
-// Aroma loads plugins at boot, so StyleMiiU stays loaded until the next one: true means it was found (this boot).
+// Aroma loads plugins at boot, so StyleMiiU stays loaded until the next one: true means it was loaded at this boot.
 bool SwitchOffStyleMiiU() {
-    if (sStyleMiiUFound >= 0) {
-        return sStyleMiiUFound == 1;
-    }
-    sStyleMiiUFound        = 0;
-    const std::string envs = "fs:/vol/external01/wiiu/environments";
-    auto lower             = [](std::string s) {
-        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
-        return s;
-    };
-    for (const auto &env : ListDirs(envs)) {
-        const std::string plugins = envs + "/" + env + "/plugins";
-        DIR *dir                  = opendir(plugins.c_str());
-        if (!dir) {
-            continue;
-        }
-        bool ours = false;
-        std::vector<std::string> theirs;
-        while (auto *entry = readdir(dir)) {
-            const std::string name = lower(entry->d_name);
-            if (IsWps(name, "stylemiiu")) {
-                theirs.emplace_back(entry->d_name);
-            } else if (IsWps(name, "pumpkinspice")) {
-                ours = true;
+    const auto folders = PluginFoldersWithPumpkinSpice();
+    CheckStyleMiiUAtBoot(folders);
+    for (const auto &folder : folders) {
+        for (const auto &name : folder.second) {
+            if (!IsWps(Lower(name), "stylemiiu")) {
+                continue;
             }
-        }
-        closedir(dir);
-        if (!ours) {
-            continue;
-        }
-        for (const auto &name : theirs) {
-            const std::string from = plugins + "/" + name;
+            const std::string from = folder.first + "/" + name;
             std::string to         = from + "1";
             for (int i = 2; IsFile(to) && i < 10; i++) {
                 to = from + std::to_string(i);
@@ -216,14 +248,32 @@ bool SwitchOffStyleMiiU() {
             [[maybe_unused]] const bool ok = !IsFile(to) && rename(from.c_str(), to.c_str()) == 0; // only logged
             SDLOG("StyleMiiU found: %s -> %s %s", from.c_str(), to.c_str(), ok ? "renamed" : "NOT renamed");
             DEBUG_FUNCTION_LINE("StyleMiiU %s: %s", ok ? "switched off" : "could not be renamed", from.c_str());
-            sStyleMiiUFound = 1;
         }
     }
-    return sStyleMiiUFound == 1;
+    return sStyleMiiUAtBoot == 1;
+}
+
+// PumpkinSpice disabled: StyleMiiU switched back on, stylemiiu*.wps1 (..9) renamed back to .wps unless a file of that
+// name is already there. Aroma loads it from the next boot.
+void SwitchOnStyleMiiU() {
+    const auto folders = PluginFoldersWithPumpkinSpice();
+    CheckStyleMiiUAtBoot(folders);
+    for (const auto &folder : folders) {
+        for (const auto &name : folder.second) {
+            if (!IsSwitchedOffStyleMiiU(Lower(name))) {
+                continue;
+            }
+            const std::string from         = folder.first + "/" + name;
+            const std::string to           = from.substr(0, from.size() - 1);
+            [[maybe_unused]] const bool ok = !IsFile(to) && rename(from.c_str(), to.c_str()) == 0; // only logged
+            SDLOG("StyleMiiU switched back on: %s -> %s %s", from.c_str(), to.c_str(), ok ? "renamed" : "NOT renamed");
+            DEBUG_FUNCTION_LINE("StyleMiiU %s: %s", ok ? "switched back on" : "could not be renamed back", from.c_str());
+        }
+    }
 }
 
 bool StyleMiiUSwitchedOffThisBoot() {
-    return sStyleMiiUFound == 1;
+    return sStyleMiiUAtBoot == 1;
 }
 
 bool IsWiiUMenu(uint64_t titleID) {

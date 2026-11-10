@@ -39,7 +39,8 @@ ON_APPLICATION_START() {
     }
     SDLOG("=== Wii U Menu start %016llX, PumpkinSpice %s, enabled %d", OSGetTitleID(), VERSION_FULL, gPumpkinSpiceEnabled);
     if (!gPumpkinSpiceEnabled) {
-        DEBUG_FUNCTION_LINE("PumpkinSpice is disabled"); // StyleMiiU is left alone
+        DEBUG_FUNCTION_LINE("PumpkinSpice is disabled");
+        SwitchOnStyleMiiU(); // if PumpkinSpice switched it off, it loads again from the next boot
     } else if (SwitchOffStyleMiiU()) {
         // renamed now, but loaded since boot: the two would clash this boot, the theme applies from the next one
         SDLOG("StyleMiiU was loaded this boot: theme not applied until the next boot");

@@ -85,7 +85,7 @@ namespace {
             WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
             sThemeAtOpen            = gActiveTheme;
 
-            if (StyleMiiUSwitchedOffThisBoot()) {
+            if (gPumpkinSpiceEnabled && StyleMiiUSwitchedOffThisBoot()) {
                 root.add(WUPSConfigItemStub::Create("StyleMiiU switched off: theme applies after a reboot"));
             }
             root.add(WUPSConfigItemBoolean::Create(PUMPKINSPICE_ENABLED_STRING, "Enabled",
@@ -139,6 +139,10 @@ namespace {
         WUPSStorageError err;
         if ((err = WUPSStorageAPI::SaveStorage()) != WUPS_STORAGE_ERROR_SUCCESS) {
             DEBUG_FUNCTION_LINE_ERR("Failed to save storage: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
+        }
+        // disabled: StyleMiiU back on now, so it loads at the next boot (also done at the next Wii U Menu start)
+        if (!gPumpkinSpiceEnabled) {
+            SwitchOnStyleMiiU();
         }
         // a new theme loads when the Wii U Menu starts: restart it now (in a game, it loads when the Menu comes back)
         if (gPumpkinSpiceEnabled && gActiveTheme != sThemeAtOpen && IsWiiUMenu(OSGetTitleID())) {
