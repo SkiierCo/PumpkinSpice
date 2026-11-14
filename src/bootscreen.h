@@ -15,6 +15,7 @@ void ScreenFlip();
 // GamePad, Wii Remote and Classic Controller input as VPAD_BUTTON_* bits (SDCafiine's input.cpp)
 void InputInit();
 void InputDeInit();
-uint32_t ReadButtonsTriggered();
+// buttons pressed since the last read; `held` (optional) gets the buttons held in that same reading
+uint32_t ReadButtonsTriggered(uint32_t *held = nullptr);
 // buttons held right now; tries for up to 200 ms while the controllers have no reading yet (right at startup)
 uint32_t ReadButtonsHeld();

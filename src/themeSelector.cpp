@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <coreinit/thread.h>
 #include <coreinit/time.h>
+#include <random>
 #include <vpad/input.h>
 #include <wups/storage.h>
 
@@ -34,20 +35,30 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
         return "";
     }
     InputInit();
-    // MINUS held while the Menu starts: autostart is cleared and the list is shown
-    if (!gAutostartTheme.empty() && (ReadButtonsHeld() & VPAD_BUTTON_MINUS)) {
+    const bool minusHeld = ReadButtonsHeld() & VPAD_BUTTON_MINUS;
+    // MINUS held while the Menu starts: the list is shown, and autostart is cleared (shuffle stays on)
+    if (minusHeld && !gShuffleThemes && !gAutostartTheme.empty()) {
         SDLOG("theme selector: MINUS held, autostart (\"%s\") cleared", gAutostartTheme.c_str());
         StoreString(AUTOSTART_THEME_STRING, gAutostartTheme, "");
     }
-    const bool autostart = std::find(themes.begin(), themes.end(), gAutostartTheme) != themes.end();
+    // the theme started without the list: shuffle's pick, else the autostart theme ("" = the list is shown)
+    std::string startTheme;
+    if (gShuffleThemes) {
+        if (!minusHeld) {
+            startTheme = ShuffleTheme(themes);
+        }
+    } else if (std::find(themes.begin(), themes.end(), gAutostartTheme) != themes.end()) {
+        startTheme = gAutostartTheme;
+    }
+    const bool autostart = !startTheme.empty();
     if (autostart && gSkipPrepareScreen) {
         InputDeInit();
-        return gAutostartTheme;
+        return startTheme;
     }
 
-    // the autostart theme, else the theme selected in the config menu, is selected here at first
+    // the autostart (or shuffled) theme, else the theme selected in the config menu, is selected here at first
     int selected = 0;
-    if (auto it = std::find(themes.begin(), themes.end(), autostart ? gAutostartTheme : gActiveTheme); it != themes.end()) {
+    if (auto it = std::find(themes.begin(), themes.end(), autostart ? startTheme : gActiveTheme); it != themes.end()) {
         selected = int(it - themes.begin());
     }
     int initScreen = 1;
@@ -63,6 +74,11 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
     const OSTime prepareStart = OSGetTime();
     std::string result;
 
+    // MINUS only counts again once it's been let go. Without this a MINUS held at startup (or held a bit too long on
+    // "Preparing theme...") came through as a new press in the list and turned autostart right back on for the
+    // selected theme, so A then started it with autostart on again
+    bool minusLocked = minusHeld;
+
     if (!ScreenInit()) {
         InputDeInit();
         SDLOG("theme selector: no screen, using \"%s\"", themes[selected].c_str());
@@ -70,26 +86,34 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
     }
 
     while (true) {
-        const uint32_t buttonsTriggered = ReadButtonsTriggered();
+        uint32_t buttonsHeld      = 0;
+        uint32_t buttonsTriggered = ReadButtonsTriggered(&buttonsHeld);
+        if (minusLocked) {
+            if (!(buttonsHeld & VPAD_BUTTON_MINUS)) {
+                minusLocked = false;
+            }
+            buttonsTriggered &= ~VPAD_BUTTON_MINUS;
+        }
 
         if (curState == 1) {
             if (buttonsTriggered & VPAD_BUTTON_MINUS) {
-                curState   = 0;
-                initScreen = 1;
+                curState    = 0;
+                initScreen  = 1;
+                minusLocked = true;
                 continue;
             }
 
             if (initScreen) {
                 ScreenClear();
                 ScreenPrint(x_offset, -1, "PumpkinSpice " VERSION_FULL);
-                ScreenPrint(x_offset, 1, "Preparing theme \"%s\"...", gAutostartTheme.c_str());
+                ScreenPrint(x_offset, 1, "Preparing theme \"%s\"...", startTheme.c_str());
                 ScreenPrint(x_offset, 3, "Press MINUS to open menu");
                 ScreenFlip();
                 initScreen = 0;
             }
 
             if (OSTicksToMilliseconds(OSGetTime() - prepareStart) >= 1000) {
-                result = gAutostartTheme;
+                result = startTheme;
                 break;
             }
         } else {
@@ -104,7 +128,8 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
 
                 // the selected theme becomes the autostart theme, or autostart is turned off if it already is
                 StoreString(AUTOSTART_THEME_STRING, gAutostartTheme, gAutostartTheme == themes[selected] ? "" : themes[selected]);
-                initScreen = 1;
+                initScreen  = 1;
+                minusLocked = true;
             } else if (buttonsTriggered & VPAD_BUTTON_B) {
                 SDLOG("theme selector: started without a theme");
                 break;
@@ -167,4 +192,24 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
         SDLOG("theme selector: \"%s\"", result.c_str());
     }
     return result;
+}
+
+std::string ShuffleTheme(const std::vector<std::string> &themes) {
+    if (themes.empty()) {
+        return "";
+    }
+    std::vector<std::string> pool;
+    for (const auto &theme : themes) {
+        if (themes.size() < 2 || theme != gLastShuffledTheme) {
+            pool.push_back(theme);
+        }
+    }
+    std::mt19937 rng(static_cast<uint32_t>(OSGetTime()));
+    const std::string theme = pool[std::uniform_int_distribution<size_t>(0, pool.size() - 1)(rng)];
+    SDLOG("shuffle: \"%s\" (last time \"%s\")", theme.c_str(), gLastShuffledTheme.c_str());
+    return theme;
+}
+
+void RememberShuffledTheme(const std::string &theme) {
+    StoreString(LAST_SHUFFLED_THEME_STRING, gLastShuffledTheme, theme);
 }

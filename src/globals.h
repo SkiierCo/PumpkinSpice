@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#define VERSION                      "v1.4.1"
+#define VERSION                      "v1.4.2"
 #define VERSION_FULL                 VERSION VERSION_EXTRA
 
 #define PUMPKINSPICE_ENABLED_STRING  "pumpkinSpiceEnabled"
@@ -12,19 +12,24 @@
 #define TITLE_FILES_STRING           "titleFiles"
 #define AUTOSTART_THEME_STRING       "autostartTheme"
 #define SKIP_PREPARE_SCREEN_STRING   "skipPrepareScreen"
+#define SHUFFLE_THEMES_STRING        "shuffleThemes"
+#define LAST_SHUFFLED_THEME_STRING   "lastShuffledTheme"
 
 #define DEFAULT_PUMPKINSPICE_ENABLED true
 #define DEFAULT_TITLE_FILES          true
 #define DEFAULT_SKIP_PREPARE_SCREEN  false
+#define DEFAULT_SHUFFLE_THEMES       false
 
 // Themes live in sd:/wiiu/pumpkinspice/themes/<theme name>/
 #define THEMES_PATH                  "fs:/vol/external01/wiiu/pumpkinspice/themes"
 
 extern bool gPumpkinSpiceEnabled;
-extern bool gTitleFiles;            // load the theme's titles folder (app icons, EULA text)
-extern bool gSkipPrepareScreen;     // theme selector: start the autostart theme without "Preparing theme..."
-extern std::string gAutostartTheme; // theme selector: theme started without the list ("" = off)
-extern std::string gActiveTheme;    // folder name of the selected theme ("" = first theme found)
+extern bool gTitleFiles;               // load the theme's titles folder (app icons, EULA text)
+extern bool gSkipPrepareScreen;        // theme selector: start the autostart theme without "Preparing theme..."
+extern std::string gAutostartTheme;    // theme selector: theme started without the list ("" = off)
+extern std::string gActiveTheme;       // folder name of the selected theme ("" = first theme found)
+extern bool gShuffleThemes;            // a random theme at every Wii U Menu start instead of gActiveTheme / gAutostartTheme
+extern std::string gLastShuffledTheme; // the theme shuffle applied last, not picked again right after
 
 // layers added for the running Wii U Menu; removed when it ends
 extern std::vector<CRLayerHandle> gLayerHandles;

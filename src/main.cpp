@@ -46,26 +46,36 @@ ON_APPLICATION_START() {
         SDLOG("StyleMiiU was loaded this boot: theme not applied until the next boot");
     } else {
         // the selector is shown at the first Wii U Menu start of a boot; later starts (back from a game) apply the
-        // theme chosen there, or the one chosen in the config menu since
+        // theme chosen there, or the one chosen in the config menu since. With shuffle on, every start gets a
+        // random theme (the first one through the selector, like an autostart theme).
         static bool sSelected     = false;
         static bool sWithoutTheme = false;     // B in the selector
         static std::string sActiveAtSelection; // the config menu's theme then
+        static bool sShuffleAtSelection = false;
         if (!sSelected) {
             RecoverInterruptedPackages(THEMES_PATH);
         }
         const auto themes = ListThemes();
         std::string theme;
         if (!sSelected) {
-            sSelected          = true;
-            theme              = SelectTheme(themes);
-            sWithoutTheme      = theme.empty();
-            sActiveAtSelection = gActiveTheme;
-        } else if (!themes.empty() && !(sWithoutTheme && gActiveTheme == sActiveAtSelection)) {
-            theme = std::find(themes.begin(), themes.end(), gActiveTheme) != themes.end() ? gActiveTheme : themes.front();
+            sSelected           = true;
+            theme               = SelectTheme(themes);
+            sWithoutTheme       = theme.empty();
+            sActiveAtSelection  = gActiveTheme;
+            sShuffleAtSelection = gShuffleThemes;
+        } else if (!themes.empty() && !(sWithoutTheme && gActiveTheme == sActiveAtSelection && gShuffleThemes == sShuffleAtSelection)) {
+            if (gShuffleThemes) {
+                theme = ShuffleTheme(themes);
+            } else {
+                theme = std::find(themes.begin(), themes.end(), gActiveTheme) != themes.end() ? gActiveTheme : themes.front();
+            }
         }
         if (theme.empty()) {
             SDLOG("%s", themes.empty() ? "no themes" : "no theme this time");
         } else {
+            if (gShuffleThemes) {
+                RememberShuffledTheme(theme);
+            }
             ApplyTheme(theme);
         }
     }

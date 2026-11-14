@@ -20,7 +20,24 @@ namespace {
     // theme list shown in the config menu; kept alive while the menu is open (the items refer to these strings)
     std::vector<std::string> sThemeNames;
     std::vector<WUPSConfigItemMultipleValues::ValuePair> sThemePairs;
-    std::string sThemeAtOpen; // the theme when the config menu was opened: changed -> the Wii U Menu restarts on close
+    // the settings when the config menu was opened. If one of these changed the Wii U Menu restarts on close because
+    // they only take effect when the Menu starts (autostart and skip screen don't count, they're only used at the
+    // first Menu start of a boot)
+    std::string sThemeAtOpen;
+    bool sShuffleAtOpen    = false;
+    bool sEnabledAtOpen    = false;
+    bool sTitleFilesAtOpen = false;
+
+    void shuffle_callback(ConfigItemBoolean *item, bool newValue) {
+        if (!item || !item->identifier) {
+            return;
+        }
+        gShuffleThemes = newValue;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store \"%s\": %s (%d)", item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
 
     void enabled_callback(ConfigItemBoolean *item, bool newValue) {
         if (!item || !item->identifier) {
@@ -84,6 +101,9 @@ namespace {
         try {
             WUPSConfigCategory root = WUPSConfigCategory(rootHandle);
             sThemeAtOpen            = gActiveTheme;
+            sShuffleAtOpen          = gShuffleThemes;
+            sEnabledAtOpen          = gPumpkinSpiceEnabled;
+            sTitleFilesAtOpen       = gTitleFiles;
 
             if (gPumpkinSpiceEnabled && StyleMiiUSwitchedOffThisBoot()) {
                 root.add(WUPSConfigItemStub::Create("StyleMiiU switched off: theme applies after a reboot"));
@@ -106,6 +126,8 @@ namespace {
                 }
                 root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING, "Theme",
                                                                        0, current, sThemePairs, &theme_callback));
+                root.add(WUPSConfigItemBoolean::Create(SHUFFLE_THEMES_STRING, "Shuffle themes", DEFAULT_SHUFFLE_THEMES,
+                                                       gShuffleThemes, &shuffle_callback));
             }
             root.add(WUPSConfigItemBoolean::Create(TITLE_FILES_STRING, "App icons and EULA", DEFAULT_TITLE_FILES, gTitleFiles,
                                                    &title_files_callback));
@@ -144,9 +166,16 @@ namespace {
         if (!gPumpkinSpiceEnabled) {
             SwitchOnStyleMiiU();
         }
-        // a new theme loads when the Wii U Menu starts: restart it now (in a game, it loads when the Menu comes back)
-        if (gPumpkinSpiceEnabled && gActiveTheme != sThemeAtOpen && IsWiiUMenu(OSGetTitleID())) {
-            SDLOG("config menu: theme changed to \"%s\", restarting the Wii U Menu", gActiveTheme.c_str());
+        // these settings only take effect when the Wii U Menu starts so it restarts now (in a game they apply when the
+        // Menu comes back). Turning PumpkinSpice on or off always counts and the others only count while it's on. While
+        // shuffling the Theme setting isn't used so changing it doesn't restart anything
+        const bool enabledChanged    = gPumpkinSpiceEnabled != sEnabledAtOpen;
+        const bool themeChanged      = gPumpkinSpiceEnabled && !gShuffleThemes && gActiveTheme != sThemeAtOpen;
+        const bool shuffleChanged    = gPumpkinSpiceEnabled && gShuffleThemes != sShuffleAtOpen;
+        const bool titleFilesChanged = gPumpkinSpiceEnabled && gTitleFiles != sTitleFilesAtOpen;
+        if ((enabledChanged || themeChanged || shuffleChanged || titleFilesChanged) && IsWiiUMenu(OSGetTitleID())) {
+            SDLOG("config menu: restarting the Wii U Menu (enabled %d, theme \"%s\", shuffle %d, app icons and EULA %d)",
+                  gPumpkinSpiceEnabled, gActiveTheme.c_str(), gShuffleThemes, gTitleFiles);
             SYSLaunchMenu();
         }
     }
@@ -163,6 +192,12 @@ void InitStorageAndConfig() {
     }
     if ((err = WUPSStorageAPI::GetOrStoreDefault(SKIP_PREPARE_SCREEN_STRING, gSkipPrepareScreen, DEFAULT_SKIP_PREPARE_SCREEN)) != WUPS_STORAGE_ERROR_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", SKIP_PREPARE_SCREEN_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    }
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(SHUFFLE_THEMES_STRING, gShuffleThemes, DEFAULT_SHUFFLE_THEMES)) != WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", SHUFFLE_THEMES_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    }
+    if (WUPSStorageAPI::Get(LAST_SHUFFLED_THEME_STRING, gLastShuffledTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
+        gLastShuffledTheme.clear(); // stored the first time shuffle applies a theme
     }
     if (WUPSStorageAPI::Get(AUTOSTART_THEME_STRING, gAutostartTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
         gAutostartTheme.clear(); // off

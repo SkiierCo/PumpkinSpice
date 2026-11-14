@@ -170,13 +170,15 @@ uint32_t ReadButtonsHeld() {
     return 0;
 }
 
-uint32_t ReadButtonsTriggered() {
+uint32_t ReadButtonsTriggered(uint32_t *held) {
     uint32_t buttons = 0;
+    uint32_t hold    = 0;
     VPADStatus vpad{};
     VPADReadError vpadError;
     VPADRead(VPAD_CHAN_0, &vpad, 1, &vpadError);
     if (vpadError == VPAD_READ_SUCCESS) {
         buttons = vpad.trigger;
+        hold    = vpad.hold;
     }
     for (int i = 0; i < 4; i++) {
         KPADStatus kpad{};
@@ -184,10 +186,15 @@ uint32_t ReadButtonsTriggered() {
         if (KPADReadEx((KPADChan) i, &kpad, 1, &kpadError) > 0 && kpadError == KPAD_ERROR_OK && kpad.extensionType != 0xFF) {
             if (kpad.extensionType == WPAD_EXT_CORE || kpad.extensionType == WPAD_EXT_NUNCHUK) {
                 buttons |= RemapWiiMoteButtons(kpad.trigger);
+                hold |= RemapWiiMoteButtons(kpad.hold);
             } else {
                 buttons |= RemapClassicButtons(kpad.classic.trigger);
+                hold |= RemapClassicButtons(kpad.classic.hold);
             }
         }
+    }
+    if (held) {
+        *held = hold;
     }
     return buttons;
 }
