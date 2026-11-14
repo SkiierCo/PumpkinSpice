@@ -172,6 +172,14 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
+**v1.5**
+- I randomly thought about adding music shuffle so now the config menu has a Shuffle Music switch aswell! every time the
+  Menu starts it picks a random song and keeps your theme's own sound effects. It uses the songs from your themes and
+  anything you put in sd:/wiiu/pumpkinspice/music, and the first start with new songs takes a bit because it gets them
+  ready once like a theme package.
+- 1.4.2 had some serious bugs so make sure you use 1.5 instead I suggest not touching that version with a ten foot
+  pole.
+
 **v1.4.2**
 - The config menu now has a Shuffle Themes switch!
   now on every Menu restart the theme shuffles, keep in mind you must have transfered all your themes to

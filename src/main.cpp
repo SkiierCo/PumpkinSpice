@@ -1,4 +1,5 @@
 #include "globals.h"
+#include "music.h"
 #include "package.h"
 #include "theme.h"
 #include "themeSelector.h"
@@ -76,7 +77,14 @@ ON_APPLICATION_START() {
             if (gShuffleThemes) {
                 RememberShuffledTheme(theme);
             }
+            // music first: its one-time prep reads the console's own sound files, before any layer is in place
+            if (gShuffleMusic) {
+                PrepareMusic(themes);
+            }
             ApplyTheme(theme);
+            if (gShuffleMusic) {
+                ApplyShuffledMusic(theme, themes);
+            }
         }
     }
     SDLOG("ON_APPLICATION_START done");
@@ -85,6 +93,9 @@ ON_APPLICATION_START() {
 ON_APPLICATION_ENDS() {
     if (IsWiiUMenu(OSGetTitleID())) {
         SDLOG("=== Wii U Menu ends");
+        if (gShuffleMusic) {
+            SaveMusicHistory(); // stored at the start, written now so it didn't hold the start up
+        }
     }
     RemoveTheme();
     deinitLogging();

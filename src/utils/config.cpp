@@ -27,6 +27,18 @@ namespace {
     bool sShuffleAtOpen    = false;
     bool sEnabledAtOpen    = false;
     bool sTitleFilesAtOpen = false;
+    bool sMusicAtOpen      = false;
+
+    void shuffle_music_callback(ConfigItemBoolean *item, bool newValue) {
+        if (!item || !item->identifier) {
+            return;
+        }
+        gShuffleMusic = newValue;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store \"%s\": %s (%d)", item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
 
     void shuffle_callback(ConfigItemBoolean *item, bool newValue) {
         if (!item || !item->identifier) {
@@ -104,6 +116,7 @@ namespace {
             sShuffleAtOpen          = gShuffleThemes;
             sEnabledAtOpen          = gPumpkinSpiceEnabled;
             sTitleFilesAtOpen       = gTitleFiles;
+            sMusicAtOpen            = gShuffleMusic;
 
             if (gPumpkinSpiceEnabled && StyleMiiUSwitchedOffThisBoot()) {
                 root.add(WUPSConfigItemStub::Create("StyleMiiU switched off: theme applies after a reboot"));
@@ -129,6 +142,8 @@ namespace {
                 root.add(WUPSConfigItemBoolean::Create(SHUFFLE_THEMES_STRING, "Shuffle themes", DEFAULT_SHUFFLE_THEMES,
                                                        gShuffleThemes, &shuffle_callback));
             }
+            root.add(WUPSConfigItemBoolean::Create(SHUFFLE_MUSIC_STRING, "Shuffle music", DEFAULT_SHUFFLE_MUSIC, gShuffleMusic,
+                                                   &shuffle_music_callback));
             root.add(WUPSConfigItemBoolean::Create(TITLE_FILES_STRING, "App icons and EULA", DEFAULT_TITLE_FILES, gTitleFiles,
                                                    &title_files_callback));
             root.add(WUPSConfigItemStub::Create("Changes apply when the Wii U Menu restarts"));
@@ -173,9 +188,10 @@ namespace {
         const bool themeChanged      = gPumpkinSpiceEnabled && !gShuffleThemes && gActiveTheme != sThemeAtOpen;
         const bool shuffleChanged    = gPumpkinSpiceEnabled && gShuffleThemes != sShuffleAtOpen;
         const bool titleFilesChanged = gPumpkinSpiceEnabled && gTitleFiles != sTitleFilesAtOpen;
-        if ((enabledChanged || themeChanged || shuffleChanged || titleFilesChanged) && IsWiiUMenu(OSGetTitleID())) {
-            SDLOG("config menu: restarting the Wii U Menu (enabled %d, theme \"%s\", shuffle %d, app icons and EULA %d)",
-                  gPumpkinSpiceEnabled, gActiveTheme.c_str(), gShuffleThemes, gTitleFiles);
+        const bool musicChanged      = gPumpkinSpiceEnabled && gShuffleMusic != sMusicAtOpen;
+        if ((enabledChanged || themeChanged || shuffleChanged || titleFilesChanged || musicChanged) && IsWiiUMenu(OSGetTitleID())) {
+            SDLOG("config menu: restarting the Wii U Menu (enabled %d, theme \"%s\", shuffle %d, music %d, app icons and EULA %d)",
+                  gPumpkinSpiceEnabled, gActiveTheme.c_str(), gShuffleThemes, gShuffleMusic, gTitleFiles);
             SYSLaunchMenu();
         }
     }
@@ -196,8 +212,18 @@ void InitStorageAndConfig() {
     if ((err = WUPSStorageAPI::GetOrStoreDefault(SHUFFLE_THEMES_STRING, gShuffleThemes, DEFAULT_SHUFFLE_THEMES)) != WUPS_STORAGE_ERROR_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", SHUFFLE_THEMES_STRING, WUPSStorageAPI_GetStatusStr(err), err);
     }
-    if (WUPSStorageAPI::Get(LAST_SHUFFLED_THEME_STRING, gLastShuffledTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
-        gLastShuffledTheme.clear(); // stored the first time shuffle applies a theme
+    if (WUPSStorageAPI::Get(SHUFFLE_HISTORY_STRING, gShuffleHistory) != WUPS_STORAGE_ERROR_SUCCESS) {
+        // stored the first time shuffle applies a theme. Coming from the first v1.4.2 build its one last theme
+        // starts the history
+        if (WUPSStorageAPI::Get(LAST_SHUFFLED_THEME_STRING, gShuffleHistory) != WUPS_STORAGE_ERROR_SUCCESS) {
+            gShuffleHistory.clear();
+        }
+    }
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(SHUFFLE_MUSIC_STRING, gShuffleMusic, DEFAULT_SHUFFLE_MUSIC)) != WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", SHUFFLE_MUSIC_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    }
+    if (WUPSStorageAPI::Get(MUSIC_HISTORY_STRING, gMusicHistory) != WUPS_STORAGE_ERROR_SUCCESS) {
+        gMusicHistory.clear(); // stored the first time music shuffle plays a song
     }
     if (WUPSStorageAPI::Get(AUTOSTART_THEME_STRING, gAutostartTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
         gAutostartTheme.clear(); // off

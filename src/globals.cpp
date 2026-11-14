@@ -6,6 +6,8 @@ bool gSkipPrepareScreen   = DEFAULT_SKIP_PREPARE_SCREEN;
 std::string gAutostartTheme;
 std::string gActiveTheme;
 bool gShuffleThemes = DEFAULT_SHUFFLE_THEMES;
-std::string gLastShuffledTheme;
+std::string gShuffleHistory;
+bool gShuffleMusic = DEFAULT_SHUFFLE_MUSIC;
+std::string gMusicHistory;
 
 std::vector<CRLayerHandle> gLayerHandles;

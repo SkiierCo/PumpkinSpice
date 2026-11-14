@@ -19,13 +19,33 @@ jobs:
       run: |
         docker build . -t builder
         docker run --rm -v ${PWD}:/project builder make
+    # the release text is this version's changelog from the README, nothing else (no generated "Full Changelog" link)
+    - name: Changelog
+      run: bash .github/scripts/changelog.sh "$GITHUB_REF_NAME" README.md "$GITHUB_REPOSITORY" > release-notes.md
     - name: Create Release
       uses: "softprops/action-gh-release@v2"
       with:
         tag_name: ${{ github.ref_name }}
         name: PumpkinSpice ${{ github.ref_name }}
+        body_path: release-notes.md
         draft: false
         prerelease: false
-        generate_release_notes: true
         files: |
           ./pumpkinspice.wps
+    # every older version's release becomes a pre-release so the newest one is the release people get. Only versions
+    # lower than this one count, so pushing an old tag again (to rebuild it) never marks a newer release
+    - name: Older releases to pre-release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        current="${GITHUB_REF_NAME#v}"
+        gh release list --repo "$GITHUB_REPOSITORY" --limit 200 --json tagName,isPrerelease \
+            --jq '.[] | select(.isPrerelease == false) | .tagName' |
+          while read -r tag; do
+            version="${tag#v}"
+            [ "$version" = "$current" ] && continue
+            if [ "$(printf '%s\n%s\n' "$version" "$current" | sort -V | head -n 1)" = "$version" ]; then
+              echo "pre-release: $tag"
+              gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --prerelease
+            fi
+          done

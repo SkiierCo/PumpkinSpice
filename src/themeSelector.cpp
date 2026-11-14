@@ -15,13 +15,13 @@
 #define TEXT_SEL(x, text1, text2) ((x) ? (text1) : (text2))
 
 namespace {
-    void StoreString(const char *key, std::string &global, const std::string &value) {
+    void StoreString(const char *key, std::string &global, const std::string &value, bool save = true) {
         if (global == value) {
             return;
         }
         global = value;
         if (WUPSStorageAPI::Store(key, global) == WUPS_STORAGE_ERROR_SUCCESS) {
-            if (WUPSStorageAPI::SaveStorage() != WUPS_STORAGE_ERROR_SUCCESS) {
+            if (save && WUPSStorageAPI::SaveStorage() != WUPS_STORAGE_ERROR_SUCCESS) {
                 DEBUG_FUNCTION_LINE_ERR("Failed to close storage");
             }
         } else {
@@ -194,22 +194,101 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
     return result;
 }
 
-std::string ShuffleTheme(const std::vector<std::string> &themes) {
-    if (themes.empty()) {
+namespace {
+    constexpr size_t kNoRepeat   = 5;  // a theme can't come back until 5 other themes were shuffled in
+    constexpr size_t kHistoryMax = 32; // how many shuffled themes are remembered
+
+    // the history string split up, newest first
+    std::vector<std::string> SplitHistory(const std::string &history) {
+        std::vector<std::string> out;
+        size_t start = 0;
+        while (start < history.size()) {
+            size_t end = history.find('|', start);
+            if (end == std::string::npos) {
+                end = history.size();
+            }
+            if (end > start) {
+                out.push_back(history.substr(start, end - start));
+            }
+            start = end + 1;
+        }
+        return out;
+    }
+
+    // one generator for the whole boot, seeded from the clock the first time it's used, so every shuffle after that
+    // keeps going from where the last one left off instead of starting over from a new clock value
+    std::mt19937 &Rng() {
+        static std::mt19937 rng([] {
+            const uint64_t t = static_cast<uint64_t>(OSGetTime());
+            return static_cast<uint32_t>(t ^ (t >> 32));
+        }());
+        return rng;
+    }
+} // namespace
+
+// How it picks: every item gets a weight from how long ago shuffle last used it. The last 5 different items get 0 so
+// none of them can come back yet (with 5 items or fewer it's all of them but one). After that the weight goes up by one
+// for every item used since, so older items are more likely but nothing is ever guaranteed. An item that isn't in the
+// history at all (new or not used in a long time) counts as the oldest.
+std::string ShufflePick(const std::vector<std::string> &items, const std::string &history, const char *what) {
+    if (items.empty()) {
         return "";
     }
-    std::vector<std::string> pool;
-    for (const auto &theme : themes) {
-        if (themes.size() < 2 || theme != gLastShuffledTheme) {
-            pool.push_back(theme);
+    // the history's items that are still there, each once (its newest spot), newest first
+    std::vector<std::string> recent;
+    for (const auto &name : SplitHistory(history)) {
+        if (std::find(items.begin(), items.end(), name) != items.end() &&
+            std::find(recent.begin(), recent.end(), name) == recent.end()) {
+            recent.push_back(name);
         }
     }
-    std::mt19937 rng(static_cast<uint32_t>(OSGetTime()));
-    const std::string theme = pool[std::uniform_int_distribution<size_t>(0, pool.size() - 1)(rng)];
-    SDLOG("shuffle: \"%s\" (last time \"%s\")", theme.c_str(), gLastShuffledTheme.c_str());
-    return theme;
+    const size_t blocked = std::min(kNoRepeat, items.size() - 1);
+    // not in the history: older than everything in it, and never blocked even while the history is still short
+    const size_t unseenAge = std::max(recent.size(), blocked) + 1;
+    std::vector<double> weights;
+    for (const auto &item : items) {
+        const auto it    = std::find(recent.begin(), recent.end(), item);
+        const size_t age = it == recent.end() ? unseenAge : size_t(it - recent.begin()) + 1; // 1 = last time
+        weights.push_back(age <= blocked ? 0.0 : double(age - blocked));
+    }
+    std::discrete_distribution<size_t> pick(weights.begin(), weights.end());
+    const std::string chosen = items[pick(Rng())];
+#ifdef PS_SDLOG
+    std::string odds;
+    double total = 0;
+    for (double w : weights) {
+        total += w;
+    }
+    for (size_t i = 0; i < items.size(); i++) {
+        odds += " \"" + items[i] + "\" " + std::to_string(int(weights[i] * 100.0 / total + 0.5)) + "%";
+    }
+    SDLOG("shuffle %s: \"%s\" (odds:%s)", what, chosen.c_str(), odds.c_str());
+#else
+    (void) what;
+#endif
+    return chosen;
+}
+
+void RememberShuffled(const char *key, std::string &history, const std::string &item, bool save) {
+    std::string updated = item;
+    size_t kept         = 1;
+    for (const auto &name : SplitHistory(history)) {
+        if (kept++ >= kHistoryMax) {
+            break;
+        }
+        updated += "|" + name;
+    }
+    StoreString(key, history, updated, save);
+}
+
+uint32_t ShuffleRandom(uint32_t n) {
+    return n ? std::uniform_int_distribution<uint32_t>(0, n - 1)(Rng()) : 0;
+}
+
+std::string ShuffleTheme(const std::vector<std::string> &themes) {
+    return ShufflePick(themes, gShuffleHistory, "theme");
 }
 
 void RememberShuffledTheme(const std::string &theme) {
-    StoreString(LAST_SHUFFLED_THEME_STRING, gLastShuffledTheme, theme);
+    RememberShuffled(SHUFFLE_HISTORY_STRING, gShuffleHistory, theme);
 }
