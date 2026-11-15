@@ -20,8 +20,12 @@ bool StyleMiiUSwitchedOffThisBoot();
 // True for the Wii U Menu (JPN, USA, EUR).
 bool IsWiiUMenu(uint64_t titleID);
 
-// Applies a theme (a name from ListThemes) to the running Wii U Menu. A theme package is prepared first, with a
-// screen saying so, and a screen with the reason if that fails.
+// Gets a theme (a name from ListThemes) ready before it's applied: a theme package becomes its folder and BPS patches
+// are applied, with a screen saying so, and a screen with the reason if that fails. Adds no layers, so call it before
+// PrepareMusic, which then sees the theme's finished files. False if there's no theme folder to apply.
+bool PrepareTheme(const std::string &theme);
+
+// Applies a theme PrepareTheme got ready to the running Wii U Menu.
 void ApplyTheme(const std::string &theme);
 
 // Removes every layer ApplyTheme added.

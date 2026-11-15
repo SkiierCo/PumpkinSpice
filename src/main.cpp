@@ -48,9 +48,13 @@ ON_APPLICATION_START() {
     } else {
         // the selector is shown at the first Wii U Menu start of a boot; later starts (back from a game) apply the
         // theme chosen there, or the one chosen in the config menu since. With shuffle on, every start gets a
-        // random theme (the first one through the selector, like an autostart theme).
-        static bool sSelected     = false;
-        static bool sWithoutTheme = false;     // B in the selector
+        // random theme (the first one through the selector, like an autostart theme). "Theme selector at every Menu
+        // start" shows it at the later starts too, but not when shuffle picks the theme or when the config menu
+        // restarted the Menu (the setting that changed just chose the theme). Shuffle music and the Music list work
+        // either way.
+        const bool restartedByPlugin = TakeRestartedByPlugin();
+        static bool sSelected        = false;
+        static bool sWithoutTheme    = false;  // B in the selector
         static std::string sActiveAtSelection; // the config menu's theme then
         static bool sShuffleAtSelection = false;
         if (!sSelected) {
@@ -58,7 +62,9 @@ ON_APPLICATION_START() {
         }
         const auto themes = ListThemes();
         std::string theme;
-        if (!sSelected) {
+        const bool selectAgain = sSelected && gSelectorEveryStart && !gShuffleThemes && !restartedByPlugin;
+        if (!sSelected || selectAgain) {
+            SDLOG("theme selector: %s", sSelected ? "every Menu start" : "first Menu start of this boot");
             sSelected           = true;
             theme               = SelectTheme(themes);
             sWithoutTheme       = theme.empty();
@@ -77,13 +83,25 @@ ON_APPLICATION_START() {
             if (gShuffleThemes) {
                 RememberShuffledTheme(theme);
             }
-            // music first: its one-time prep reads the console's own sound files, before any layer is in place
-            if (gShuffleMusic) {
-                PrepareMusic(themes);
-            }
-            ApplyTheme(theme);
-            if (gShuffleMusic) {
-                ApplyShuffledMusic(theme, themes);
+            // the theme's package and BPS patches first, so the music prep sees its finished sound archive, then the
+            // music prep: it reads the console's own sound files, before any layer is in place. A song from the config
+            // menu's Music list uses the same prep, and Shuffle music wins over it. With Music priority on "Theme" a
+            // theme with its own song keeps it.
+            if (PrepareTheme(theme)) {
+                const bool selectedMusic = !gShuffleMusic && !gSelectedMusic.empty();
+                if (gShuffleMusic || selectedMusic) {
+                    PrepareMusic(themes);
+                }
+                ApplyTheme(theme);
+                if (gShuffleMusic) {
+                    ApplyShuffledMusic(theme, themes);
+                } else if (selectedMusic) {
+                    if (gThemeMusicFirst && ThemeHasOwnSong(theme)) {
+                        SDLOG("music: \"%s\" keeps its own song (Music priority: Theme)", theme.c_str());
+                    } else {
+                        ApplySelectedMusic(theme, gSelectedMusic);
+                    }
+                }
             }
         }
     }

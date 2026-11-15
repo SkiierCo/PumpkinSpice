@@ -646,6 +646,37 @@ namespace {
         }
     }
 
+    // Whether the song's stream file and the theme's archive for its volume are both there. Only these two are checked:
+    // for one that's gone (deleted by hand) the index is dropped, so the next start looks at everything again.
+    bool SongFilesThere(const Ready &r, const std::string &theme) {
+        const std::string menu = Cache("menus/" + MenuName(theme, r.volume) + ".bfsar");
+        if (IsFile(r.stream) && IsFile(menu)) {
+            return true;
+        }
+        SDLOG("music: \"%s\" isn't ready after all (%s missing)", r.name.c_str(), IsFile(r.stream) ? menu.c_str() : r.stream.c_str());
+        unlink(Cache("index.txt").c_str());
+        return false;
+    }
+
+    // Adds the song's two layers over `theme` (SongFilesThere first). False if one failed: the theme's own archive and
+    // music stay.
+    bool ApplySong(const Ready &r, const std::string &theme, [[maybe_unused]] OSTime start) {
+        const std::string target               = "/vol/content/Common/Sound/Men/";
+        const std::string menu                 = Cache("menus/" + MenuName(theme, r.volume) + ".bfsar");
+        [[maybe_unused]] const unsigned picked = Ms(start); // the timings are only logged
+        if (!AddFileLayer("song", target + "stream/BGM_MEN.bfstm", r.stream)) {
+            return false; // no stream file: the theme's own archive and music stay
+        }
+        [[maybe_unused]] const unsigned song = Ms(start);
+        if (!AddFileLayer("sound archive", target + kArchive, menu)) {
+            SDLOG("music: the theme's own archive and music stay");
+            return false;
+        }
+        SDLOG("music: \"%s\" over \"%s\" (%s; picked %u ms, song layer %u ms, archive layer %u ms)", r.name.c_str(), theme.c_str(),
+              menu.c_str(), picked, song - picked, Ms(start) - song);
+        return true;
+    }
+
     void SaveIndex(const std::string &fingerprint, const std::vector<Song> &songs) {
         sReady.clear();
         std::string t = fingerprint + "--\n";
@@ -805,8 +836,7 @@ void ApplyShuffledMusic(const std::string &theme, const std::vector<std::string>
         return;
     }
 
-    // a song from the ready list (PrepareMusic, this Menu start). Only the picked song's two files are checked: one
-    // that's gone (deleted by hand) is left out and the index is dropped, so the next start looks at everything again.
+    // a song from the ready list (PrepareMusic, this Menu start); one whose files are gone is left out
     (void) themes;
     const OSTime start       = OSGetTime();
     std::vector<Ready> ready = sReady;
@@ -817,29 +847,65 @@ void ApplyShuffledMusic(const std::string &theme, const std::vector<std::string>
         }
         const std::string pick = ShufflePick(names, gMusicHistory, "music");
         const auto it          = std::find_if(ready.begin(), ready.end(), [&](const Ready &r) { return r.name == pick; });
-        const std::string menu = Cache("menus/" + MenuName(theme, it->volume) + ".bfsar");
-        if (!IsFile(it->stream) || !IsFile(menu)) {
-            SDLOG("music: \"%s\" isn't ready after all (%s missing)", pick.c_str(), IsFile(it->stream) ? menu.c_str() : it->stream.c_str());
-            unlink(Cache("index.txt").c_str());
+        if (!SongFilesThere(*it, theme)) {
             ready.erase(it);
             continue;
         }
-        [[maybe_unused]] const unsigned picked = Ms(start); // the timings are only logged
-        if (!AddFileLayer("song", target + "stream/BGM_MEN.bfstm", it->stream)) {
-            return; // no stream file: the theme's own archive and music stay
+        if (ApplySong(*it, theme, start)) {
+            // stored now, saved to the SD card when the Menu closes (SaveMusicHistory), not while it's starting
+            RememberShuffled(MUSIC_HISTORY_STRING, gMusicHistory, pick, false);
         }
-        [[maybe_unused]] const unsigned song = Ms(start);
-        if (!AddFileLayer("sound archive", target + kArchive, menu)) {
-            SDLOG("music: the theme's own archive and music stay");
-            return;
-        }
-        // stored now, saved to the SD card when the Menu closes (SaveMusicHistory), not while it's starting
-        RememberShuffled(MUSIC_HISTORY_STRING, gMusicHistory, pick, false);
-        SDLOG("music: \"%s\" over \"%s\" (%s; picked %u ms, song layer %u ms, archive layer %u ms)", pick.c_str(), theme.c_str(),
-              menu.c_str(), picked, song - picked, Ms(start) - song);
         return;
     }
     SDLOG("music: nothing ready for \"%s\": its own music this time", theme.c_str());
+}
+
+void ApplySelectedMusic(const std::string &theme, const std::string &song) {
+    const OSTime start = OSGetTime();
+    const auto it      = std::find_if(sReady.begin(), sReady.end(), [&](const Ready &r) { return r.name == song; });
+    if (it == sReady.end()) {
+        SDLOG("music: \"%s\" from the Music list isn't ready: \"%s\" plays its own music", song.c_str(), theme.c_str());
+        return;
+    }
+    if (SongFilesThere(*it, theme)) {
+        ApplySong(*it, theme, start);
+    }
+}
+
+bool ThemeHasOwnSong(const std::string &theme) {
+    const std::string archive = MenuSource(theme);
+    if (archive.empty()) {
+        return false;
+    }
+    const auto r = ReadRecord("theme - " + theme, 2); // the theme's record: stamp, kind (Sources' name for it)
+    return r[0] == Stamp(archive) && (r[1] == "wave" || r[1] == "stream");
+}
+
+std::vector<std::string> MusicSongs() {
+    std::vector<std::string> out;
+    if (sReady.empty()) {
+        // the config menu without a prep this Menu start: the songs index.txt lists after its "--" line
+        const std::string t = ReadText(Cache("index.txt"));
+        size_t at           = t.find("\n--\n");
+        at                  = at == std::string::npos ? t.size() : at + 4;
+        while (at < t.size()) {
+            size_t end = t.find('\n', at);
+            if (end == std::string::npos) {
+                end = t.size();
+            }
+            const std::string line = t.substr(at, end - at);
+            at                     = end + 1;
+            const size_t tab       = line.find('\t');
+            if (tab != std::string::npos && tab > 0) {
+                out.push_back(line.substr(0, tab));
+            }
+        }
+        return out;
+    }
+    for (const auto &r : sReady) {
+        out.push_back(r.name);
+    }
+    return out;
 }
 
 void SaveMusicHistory() {

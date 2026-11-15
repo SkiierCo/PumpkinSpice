@@ -15,6 +15,18 @@ void PrepareMusic(const std::vector<std::string> &themes);
 // ListThemes(): their songs are in the shuffle too.
 void ApplyShuffledMusic(const std::string &theme, const std::vector<std::string> &themes);
 
+// Adds the layers that play `song` (a name from MusicSongs) over `theme` (already applied). Does nothing if that song or
+// the theme isn't ready: the theme's own music plays. Needs PrepareMusic first, like ApplyShuffledMusic.
+void ApplySelectedMusic(const std::string &theme, const std::string &song);
+
+// True if `theme`'s own sound archive has a song of its own (the regular way or streamed), as the last PrepareMusic
+// found it. False for a theme without one, which plays the default music.
+bool ThemeHasOwnSong(const std::string &theme);
+
+// The songs ready for Shuffle music and the Music list: this Menu start's if PrepareMusic ran, otherwise the ones the
+// last prep left in index.txt. Empty if music was never prepared.
+std::vector<std::string> MusicSongs();
+
 // Saves the music history to the SD card (ApplyShuffledMusic only stores it, so the Menu start isn't held up by the
 // write). Call when the Menu closes.
 void SaveMusicHistory();

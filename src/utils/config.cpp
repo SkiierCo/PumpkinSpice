@@ -1,6 +1,7 @@
 #include "config.h"
 #include "globals.h"
 #include "logger.h"
+#include "music.h"
 #include "sdlog.h"
 #include "theme.h"
 #include <coreinit/title.h>
@@ -28,6 +29,37 @@ namespace {
     bool sEnabledAtOpen    = false;
     bool sTitleFilesAtOpen = false;
     bool sMusicAtOpen      = false;
+    std::string sSelectedMusicAtOpen;
+    bool sThemeMusicFirstAtOpen = false;
+
+    // Music priority: the song from the Music list, or a theme's own song
+    const std::vector<WUPSConfigItemMultipleValues::ValuePair> kPriorityPairs = {{0, "Selected song"}, {1, "Theme"}};
+
+    void priority_callback(ConfigItemMultipleValues *item, uint32_t newValue) {
+        if (!item || newValue > 1) {
+            return;
+        }
+        gThemeMusicFirst = newValue == 1;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(THEME_MUSIC_FIRST_STRING, gThemeMusicFirst)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store the music priority: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
+
+    // the Music list: "Theme's own", then the songs music prep has ready (MusicSongs)
+    std::vector<std::string> sMusicNames;
+    std::vector<WUPSConfigItemMultipleValues::ValuePair> sMusicPairs;
+
+    void music_callback(ConfigItemMultipleValues *item, uint32_t newValue) {
+        if (!item || newValue > sMusicNames.size()) {
+            return;
+        }
+        gSelectedMusic = newValue == 0 ? std::string() : sMusicNames[newValue - 1];
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(SELECTED_MUSIC_STRING, gSelectedMusic)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store the music: %s (%d)", WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
 
     void shuffle_music_callback(ConfigItemBoolean *item, bool newValue) {
         if (!item || !item->identifier) {
@@ -87,6 +119,19 @@ namespace {
         }
     }
 
+    bool sRestartedByPlugin = false; // set just before the config menu restarts the Wii U Menu (TakeRestartedByPlugin)
+
+    void selector_every_start_callback(ConfigItemBoolean *item, bool newValue) {
+        if (!item || !item->identifier) {
+            return;
+        }
+        gSelectorEveryStart = newValue;
+        WUPSStorageError err;
+        if ((err = WUPSStorageAPI::Store(item->identifier, newValue)) != WUPS_STORAGE_ERROR_SUCCESS) {
+            DEBUG_FUNCTION_LINE_WARN("Failed to store \"%s\": %s (%d)", item->identifier, WUPSStorageAPI_GetStatusStr(err), err);
+        }
+    }
+
     void skip_prepare_callback(ConfigItemBoolean *item, bool newValue) {
         if (!item || !item->identifier) {
             return;
@@ -117,6 +162,8 @@ namespace {
             sEnabledAtOpen          = gPumpkinSpiceEnabled;
             sTitleFilesAtOpen       = gTitleFiles;
             sMusicAtOpen            = gShuffleMusic;
+            sSelectedMusicAtOpen    = gSelectedMusic;
+            sThemeMusicFirstAtOpen  = gThemeMusicFirst;
 
             if (gPumpkinSpiceEnabled && StyleMiiUSwitchedOffThisBoot()) {
                 root.add(WUPSConfigItemStub::Create("StyleMiiU switched off: theme applies after a reboot"));
@@ -139,6 +186,21 @@ namespace {
                 }
                 root.add(WUPSConfigItemMultipleValues::CreateFromIndex(ACTIVE_THEME_STRING, "Theme",
                                                                        0, current, sThemePairs, &theme_callback));
+
+                // not used while Shuffle music is on (shuffle picks the song), but it stays in the list with its value.
+                // A chosen song that isn't ready any more shows as "Theme's own" and stays stored until another pick.
+                sMusicNames = MusicSongs();
+                sMusicPairs.clear();
+                sMusicPairs.push_back({0, "Theme's own"});
+                int music = 0;
+                for (size_t i = 0; i < sMusicNames.size(); i++) {
+                    sMusicPairs.push_back({static_cast<uint32_t>(i + 1), sMusicNames[i]});
+                    if (sMusicNames[i] == gSelectedMusic) {
+                        music = static_cast<int>(i + 1);
+                    }
+                }
+                root.add(WUPSConfigItemMultipleValues::CreateFromIndex(SELECTED_MUSIC_STRING, "Music",
+                                                                       0, music, sMusicPairs, &music_callback));
                 root.add(WUPSConfigItemBoolean::Create(SHUFFLE_THEMES_STRING, "Shuffle themes", DEFAULT_SHUFFLE_THEMES,
                                                        gShuffleThemes, &shuffle_callback));
             }
@@ -164,6 +226,13 @@ namespace {
                                                                "Skip \"Preparing theme...\" screen",
                                                                DEFAULT_SKIP_PREPARE_SCREEN, gSkipPrepareScreen,
                                                                &skip_prepare_callback));
+            // not used while Shuffle themes is on (shuffle picks the theme), but it stays in the list with its value
+            advancedSettings.add(WUPSConfigItemBoolean::Create(SELECTOR_EVERY_START_STRING, "Theme selector at every Menu start",
+                                                               DEFAULT_SELECTOR_EVERY_START, gSelectorEveryStart,
+                                                               &selector_every_start_callback));
+            // only used with a song picked in the Music list and Shuffle music off, but it stays in the list
+            advancedSettings.add(WUPSConfigItemMultipleValues::CreateFromIndex(THEME_MUSIC_FIRST_STRING, "Music priority", 0,
+                                                                               gThemeMusicFirst ? 1 : 0, kPriorityPairs, &priority_callback));
             root.add(std::move(advancedSettings));
         } catch (std::exception &e) {
             DEBUG_FUNCTION_LINE_ERR("Exception: %s\n", e.what());
@@ -189,17 +258,31 @@ namespace {
         const bool shuffleChanged    = gPumpkinSpiceEnabled && gShuffleThemes != sShuffleAtOpen;
         const bool titleFilesChanged = gPumpkinSpiceEnabled && gTitleFiles != sTitleFilesAtOpen;
         const bool musicChanged      = gPumpkinSpiceEnabled && gShuffleMusic != sMusicAtOpen;
-        if ((enabledChanged || themeChanged || shuffleChanged || titleFilesChanged || musicChanged) && IsWiiUMenu(OSGetTitleID())) {
-            SDLOG("config menu: restarting the Wii U Menu (enabled %d, theme \"%s\", shuffle %d, music %d, app icons and EULA %d)",
-                  gPumpkinSpiceEnabled, gActiveTheme.c_str(), gShuffleThemes, gShuffleMusic, gTitleFiles);
+        const bool songChanged       = gPumpkinSpiceEnabled && !gShuffleMusic && gSelectedMusic != sSelectedMusicAtOpen;
+        const bool priorityChanged   = gPumpkinSpiceEnabled && !gShuffleMusic && !gSelectedMusic.empty() && gThemeMusicFirst != sThemeMusicFirstAtOpen;
+        if ((enabledChanged || themeChanged || shuffleChanged || titleFilesChanged || musicChanged || songChanged || priorityChanged) &&
+            IsWiiUMenu(OSGetTitleID())) {
+            SDLOG("config menu: restarting the Wii U Menu (enabled %d, theme \"%s\", shuffle %d, music %d, song \"%s\", theme music first %d, app icons and EULA %d)",
+                  gPumpkinSpiceEnabled, gActiveTheme.c_str(), gShuffleThemes, gShuffleMusic, gSelectedMusic.c_str(), gThemeMusicFirst, gTitleFiles);
+            sRestartedByPlugin = true; // the next start skips the theme selector: the settings just chose the theme
             SYSLaunchMenu();
         }
     }
 
 } // namespace
 
+bool TakeRestartedByPlugin() {
+    const bool was     = sRestartedByPlugin;
+    sRestartedByPlugin = false;
+    return was;
+}
+
 void InitStorageAndConfig() {
     WUPSStorageError err;
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(SELECTOR_EVERY_START_STRING, gSelectorEveryStart, DEFAULT_SELECTOR_EVERY_START)) !=
+        WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", SELECTOR_EVERY_START_STRING, WUPSStorageAPI_GetStatusStr(err), err);
+    }
     if ((err = WUPSStorageAPI::GetOrStoreDefault(PUMPKINSPICE_ENABLED_STRING, gPumpkinSpiceEnabled, DEFAULT_PUMPKINSPICE_ENABLED)) != WUPS_STORAGE_ERROR_SUCCESS) {
         DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", PUMPKINSPICE_ENABLED_STRING, WUPSStorageAPI_GetStatusStr(err), err);
     }
@@ -224,6 +307,12 @@ void InitStorageAndConfig() {
     }
     if (WUPSStorageAPI::Get(MUSIC_HISTORY_STRING, gMusicHistory) != WUPS_STORAGE_ERROR_SUCCESS) {
         gMusicHistory.clear(); // stored the first time music shuffle plays a song
+    }
+    if (WUPSStorageAPI::Get(SELECTED_MUSIC_STRING, gSelectedMusic) != WUPS_STORAGE_ERROR_SUCCESS) {
+        gSelectedMusic.clear(); // the theme's own, stored the first time a song is picked
+    }
+    if ((err = WUPSStorageAPI::GetOrStoreDefault(THEME_MUSIC_FIRST_STRING, gThemeMusicFirst, DEFAULT_THEME_MUSIC_FIRST)) != WUPS_STORAGE_ERROR_SUCCESS) {
+        DEBUG_FUNCTION_LINE_ERR("Failed to get or create \"%s\": %s (%d)", THEME_MUSIC_FIRST_STRING, WUPSStorageAPI_GetStatusStr(err), err);
     }
     if (WUPSStorageAPI::Get(AUTOSTART_THEME_STRING, gAutostartTheme) != WUPS_STORAGE_ERROR_SUCCESS) {
         gAutostartTheme.clear(); // off

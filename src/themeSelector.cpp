@@ -41,13 +41,15 @@ std::string SelectTheme(const std::vector<std::string> &themes) {
         SDLOG("theme selector: MINUS held, autostart (\"%s\") cleared", gAutostartTheme.c_str());
         StoreString(AUTOSTART_THEME_STRING, gAutostartTheme, "");
     }
-    // the theme started without the list: shuffle's pick, else the autostart theme ("" = the list is shown)
+    // the theme started without the list: shuffle's pick, else the autostart theme ("" = the list is shown). With
+    // "Theme selector at every Menu start" on, autostart isn't used at any start (owner, 2026-11-15) but stays stored,
+    // and MINUS in the list still sets it for when the option is off again
     std::string startTheme;
     if (gShuffleThemes) {
         if (!minusHeld) {
             startTheme = ShuffleTheme(themes);
         }
-    } else if (std::find(themes.begin(), themes.end(), gAutostartTheme) != themes.end()) {
+    } else if (!gSelectorEveryStart && std::find(themes.begin(), themes.end(), gAutostartTheme) != themes.end()) {
         startTheme = gAutostartTheme;
     }
     const bool autostart = !startTheme.empty();

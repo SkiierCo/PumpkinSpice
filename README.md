@@ -40,6 +40,13 @@ I make packages with my tool LatteLab from a theme folder laid out like below an
 covers. LatteLab can also rebuild a package the same way. The format code is in lib/wiiumenu and it's shared with
 LatteLab.
 
+## BPS patches
+You can also put BPS patches in a theme folder and PumpkinSpice applies them the same way as a package. Name them
+men.bps, men2.bps and cafe_barista_men.bps and put them right in the theme folder, or put them in content with the same
+path as the file they patch plus .bps (content/Common/Package/Men.pack.bps). On the first start each patch gets applied
+to the console's own file, the finished file goes into the theme folder and the .bps gets deleted. A patch made for a
+different version of the file stays on the SD card and gets tried again on the next restart.
+
 ## Themes
 Each theme is a folder in sd:/wiiu/pumpkinspice/themes:
 
@@ -141,6 +148,7 @@ becomes the Theme setting. MINUS turns autostart on or off for a selected theme 
 "(autostart)"). With autostart on that theme starts after "Preparing theme..." without the list and you can press
 MINUS there to open the list. Holding MINUS while the console starts clears autostart and shows the list. Coming back
 to the Menu from a game uses the same choice unless Shuffle themes is on, then every Menu start gets a random theme.
+With Theme selector at every Menu start on the list shows every time the Menu starts and autostart isn't used.
 
 While a theme package is being prepared a screen shows the progress (only on the first start)\
 PLEASE DO NOT TURN OFF YOUR CONSOLE. If it fails a screen shows why and sends you to the default/current menu.
@@ -151,10 +159,16 @@ Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
 - **Theme**: the theme to load. Without a choice, the first theme folder (alphabetical) is used.
 - **Shuffle themes**: a random theme every time the Wii U Menu starts and never the same one twice in a row. While
   it's on the Theme and Autostart theme settings aren't used.
+- **Music**: a song from your themes or `sd:/wiiu/pumpkinspice/music` that plays over every theme ("Theme's own" plays
+  the theme's music). The songs show up after Shuffle music got them ready once. While Shuffle music is on it isn't
+  used.
 - **App icons and EULA**: loads the theme's `titles` folder. Off, only `content` is loaded (one layer), for a console
   where the Wii U Menu still stops at startup with the theme on.
 - **Advanced settings**: **Autostart theme** (Off, or the theme the selector starts by itself) and **Skip "Preparing
-  theme..." screen** (the autostart theme starts with no screen; off by default).
+  theme..." screen** (the autostart theme starts with no screen; off by default). Advanced settings also has **Theme
+  selector at every Menu start** (the selector shows at every Menu start except restarts from the config menu;
+  autostart isn't used while it's on) and **Music priority** (Selected song or Theme, which one wins when the theme has
+  its own song).
 
 Changes apply when you exit the plugin config menu\
 If you chose a new **Theme** it'll restart the Menu, themes load very quickly. On the boot where PumpkinSpice switches
@@ -172,6 +186,18 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
+**v1.5.1**
+- PumpkinSpice can now read BPS patches just like a .ps! put men.bps, men2.bps or cafe_barista_men.bps in your theme
+  folder and on the first start they get applied to your console's own files then deleted. If a patch was made for a
+  different file it stays on your SD Card and gets tried again on the next restart. ([See BPS patches](#bps-patches))
+- The config menu now has a Music list so you can pick one song from your themes or the music folder and play it over
+  every theme. It uses the same songs as Shuffle Music so they show up after Shuffle Music got them ready once and while
+  Shuffle Music is on it doesn't do anything. I had a song picked and the theme's music beat it so there's a Music
+  Priority setting in Advanced settings aswell where you choose if your song or the theme's own song wins.
+- New setting Theme selector at every Menu start in Advanced settings that shows the selector every time the Menu
+  starts and not just after a boot, except when the config menu restarts it. It doesn't do anything while Shuffle
+  Themes is on and autostart isn't used while it's on.
+
 **v1.5**
 - I randomly thought about adding music shuffle so now the config menu has a Shuffle Music switch aswell! every time the
   Menu starts it picks a random song and keeps your theme's own sound effects. It uses the songs from your themes and

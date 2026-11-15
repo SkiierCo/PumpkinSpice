@@ -1,5 +1,6 @@
 #include "theme.h"
 #include "bootscreen.h"
+#include "bpspatch.h"
 #include "codepatch.h"
 #include "globals.h"
 #include "package.h"
@@ -295,7 +296,8 @@ namespace {
         ScreenFlip();
     }
 
-    void ShowPrepareFailed(const std::string &theme, const std::string &why, bool fallback) {
+    // `what`: "package" or "patch", the file that stays on the SD card to be tried again
+    void ShowPrepareFailed(const std::string &theme, const std::string &why, bool fallback, const char *what = "package") {
         ScreenClear();
         ScreenPrint(-2, -1, "PumpkinSpice " VERSION_FULL);
         ScreenPrint(-2, 1, "Theme \"%s\" could not be prepared:", theme.c_str());
@@ -311,7 +313,7 @@ namespace {
             ScreenPrint(-2, y++, "%s", rest.substr(0, cut).c_str());
             rest = rest.substr(cut < rest.size() && rest[cut] == ' ' ? cut + 1 : cut);
         }
-        ScreenPrint(-2, y + 1, "The package stays on the SD card and is tried again");
+        ScreenPrint(-2, y + 1, "The %s stays on the SD card and is tried again", what);
         ScreenPrint(-2, y + 2, "the next time the Wii U Menu starts.");
         ScreenPrint(-2, y + 4, fallback ? "Starting with the files already in the theme folder." : "Starting the Wii U Menu without a theme.");
         ScreenPrint(-2, y + 6, "Press A to continue");
@@ -326,11 +328,11 @@ namespace {
     }
 } // namespace
 
-void ApplyTheme(const std::string &theme) {
+bool PrepareTheme(const std::string &theme) {
     // a package (a .ps in the theme folder) becomes the regular theme folder on its first start (package.h); if that
     // fails, what is in the folder is used as it is
-    std::string themePath     = std::string(THEMES_PATH) + "/" + theme;
-    const std::string package = FindPackage(THEMES_PATH, theme);
+    const std::string themePath = std::string(THEMES_PATH) + "/" + theme;
+    const std::string package   = FindPackage(THEMES_PATH, theme);
     if (!package.empty()) {
         SDLOG("theme \"%s\" (package %s)", theme.c_str(), package.c_str());
         const bool screen = ScreenInit();
@@ -355,7 +357,7 @@ void ApplyTheme(const std::string &theme) {
             ScreenDeInit();
             if (!fallback) {
                 DEBUG_FUNCTION_LINE_ERR("Theme package \"%s\" could not be used", theme.c_str());
-                return;
+                return false;
             }
             SDLOG("package \"%s\" not usable this time: the existing theme folder is loaded", theme.c_str());
         } else {
@@ -364,6 +366,32 @@ void ApplyTheme(const std::string &theme) {
     } else {
         SDLOG("theme \"%s\"", theme.c_str());
     }
+    // BPS patches in the theme folder (bpspatch.h) the same way: applied once to this console's own files, before
+    // the layers go in. One that doesn't fit stays for next time and the theme starts with what it already has.
+    if (HasBpsPatches(themePath)) {
+        SDLOG("theme \"%s\": BPS patches to apply", theme.c_str());
+        const bool screen = ScreenInit();
+        OSTime lastDraw   = 0;
+        if (screen) {
+            DrawPreparing(theme, 0, 0);
+        }
+        const PackageProgress progress = [&](int file, int files) {
+            if (file == files || OSTicksToMilliseconds(OSGetTime() - lastDraw) >= 100) {
+                DrawPreparing(theme, file, files);
+                lastDraw = OSGetTime();
+            }
+        };
+        std::string why;
+        if (!ApplyBpsPatches(themePath, screen ? progress : nullptr, &why) && screen) {
+            ShowPrepareFailed(theme, why, true, "patch");
+        }
+        ScreenDeInit();
+    }
+    return true;
+}
+
+void ApplyTheme(const std::string &theme) {
+    const std::string themePath = std::string(THEMES_PATH) + "/" + theme;
     DEBUG_FUNCTION_LINE("Applying theme \"%s\" from %s", theme.c_str(), themePath.c_str());
     AddContentLayer(themePath);
     if (gTitleFiles) {

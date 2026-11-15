@@ -9,5 +9,8 @@ bool gShuffleThemes = DEFAULT_SHUFFLE_THEMES;
 std::string gShuffleHistory;
 bool gShuffleMusic = DEFAULT_SHUFFLE_MUSIC;
 std::string gMusicHistory;
+bool gSelectorEveryStart = DEFAULT_SELECTOR_EVERY_START;
+std::string gSelectedMusic;
+bool gThemeMusicFirst = DEFAULT_THEME_MUSIC_FIRST;
 
 std::vector<CRLayerHandle> gLayerHandles;

@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-#define VERSION                      "v1.5"
+#define VERSION                      "v1.5.1"
 #define VERSION_FULL                 VERSION VERSION_EXTRA
 
 #define PUMPKINSPICE_ENABLED_STRING  "pumpkinSpiceEnabled"
@@ -17,12 +17,17 @@
 #define LAST_SHUFFLED_THEME_STRING   "lastShuffledTheme" // v1.4.2's single last theme, only read to start the history
 #define SHUFFLE_MUSIC_STRING         "shuffleMusic"
 #define MUSIC_HISTORY_STRING         "musicHistory"
+#define SELECTOR_EVERY_START_STRING  "selectorEveryStart"
+#define SELECTED_MUSIC_STRING        "selectedMusic"
+#define THEME_MUSIC_FIRST_STRING     "themeMusicFirst"
 
 #define DEFAULT_PUMPKINSPICE_ENABLED true
 #define DEFAULT_TITLE_FILES          true
 #define DEFAULT_SKIP_PREPARE_SCREEN  false
 #define DEFAULT_SHUFFLE_THEMES       false
 #define DEFAULT_SHUFFLE_MUSIC        false
+#define DEFAULT_SELECTOR_EVERY_START false
+#define DEFAULT_THEME_MUSIC_FIRST    false
 
 // Themes live in sd:/wiiu/pumpkinspice/themes/<theme name>/
 #define THEMES_PATH                  "fs:/vol/external01/wiiu/pumpkinspice/themes"
@@ -40,6 +45,10 @@ extern bool gShuffleThemes;         // a random theme at every Wii U Menu start 
 extern std::string gShuffleHistory; // themes shuffle applied, newest first, joined with '|' (not allowed in FAT names)
 extern bool gShuffleMusic;          // a random song at every Wii U Menu start, the theme's own sound effects kept
 extern std::string gMusicHistory;   // songs music shuffle played, same form as gShuffleHistory
+extern bool gSelectorEveryStart;    // theme selector at every Menu start, not only the first of a boot (not with shuffle)
+extern std::string gSelectedMusic;  // song from the config menu's Music list over every theme ("" = the theme's own; not
+                                    // used while gShuffleMusic is on)
+extern bool gThemeMusicFirst;       // Music priority: a theme with its own song keeps it over gSelectedMusic
 
 // layers added for the running Wii U Menu; removed when it ends
 extern std::vector<CRLayerHandle> gLayerHandles;
