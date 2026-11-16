@@ -160,8 +160,7 @@ Open the plugin config menu (L, DPAD Down and Minus on the GamePad):
 - **Shuffle themes**: a random theme every time the Wii U Menu starts and never the same one twice in a row. While
   it's on the Theme and Autostart theme settings aren't used.
 - **Music**: a song from your themes or `sd:/wiiu/pumpkinspice/music` that plays over every theme ("Theme's own" plays
-  the theme's music). The songs show up after Shuffle music got them ready once. While Shuffle music is on it isn't
-  used.
+  the theme's music). New songs get ready at the next Menu start. While Shuffle music is on it isn't used.
 - **App icons and EULA**: loads the theme's `titles` folder. Off, only `content` is loaded (one layer), for a console
   where the Wii U Menu still stops at startup with the theme on.
 - **Advanced settings**: **Autostart theme** (Off, or the theme the selector starts by itself) and **Skip "Preparing
@@ -186,6 +185,13 @@ At each boot the last boot's log moves to `log-previous.txt` (so the log of a bo
 are deleted.
 
 ## Changes
+**v1.5.2**
+- PumpkinSpice can now play songs that have the stream file inside the cafe_barista_men.bfsar, which is another way to do cafes now
+- New songs now get ready at every Menu start and not only when Shuffle Music is on, so a song you add to the music
+  folder shows up in the Music list without turning on Shuffle Music first. When nothing is new it just checks the
+  files so the Menu starts as fast as before.
+- Music Priority fix
+
 **v1.5.1**
 - PumpkinSpice can now read BPS patches just like a .ps! put men.bps, men2.bps or cafe_barista_men.bps in your theme
   folder and on the first start they get applied to your console's own files then deleted. If a patch was made for a

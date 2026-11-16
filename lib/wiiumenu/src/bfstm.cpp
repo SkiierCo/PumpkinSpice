@@ -315,14 +315,18 @@ Bytes assemble(ByteView tpl, const Template& t, const std::vector<AdpcmChannel>&
     for (std::size_t c = 0; c < channels; ++c) {
         const std::size_t e = ct + std::size_t(s32be(info, ct + 8 + 8 * c));
         const std::size_t a = e + std::size_t(s32be(info, e + 4));
+        // DSP-ADPCM info: 16 coefficients, then the start context and the loop context, with no gain field in
+        // between (unlike the GameCube DSP header). Stock BGM_SET_ACS.bfstm has its loop predictor/scale at +0x26,
+        // the header of the frame its loop starts in (2026-11-15); with a gain field everything sat 2 bytes late
+        // and the stream started and looped with the wrong scale and history (a short glitch at every loop).
         for (int k = 0; k < 16; ++k) put16(info, a + 2 * std::size_t(k), std::uint16_t(enc[c].coefs[k]));
-        put16(info, a + 32, 0);  // gain
-        put16(info, a + 34, enc[c].pred_scale);
-        put16(info, a + 36, std::uint16_t(enc[c].hist1));
-        put16(info, a + 38, std::uint16_t(enc[c].hist2));
-        put16(info, a + 40, enc[c].loop_pred_scale);
-        put16(info, a + 42, std::uint16_t(enc[c].loop_hist1));
-        put16(info, a + 44, std::uint16_t(enc[c].loop_hist2));
+        put16(info, a + 0x20, enc[c].pred_scale);
+        put16(info, a + 0x22, std::uint16_t(enc[c].hist1));
+        put16(info, a + 0x24, std::uint16_t(enc[c].hist2));
+        put16(info, a + 0x26, enc[c].loop_pred_scale);
+        put16(info, a + 0x28, std::uint16_t(enc[c].loop_hist1));
+        put16(info, a + 0x2A, std::uint16_t(enc[c].loop_hist2));
+        put16(info, a + 0x2C, 0);  // padding
     }
 
     // SEEK: decoder history at each block start, [block][channel]{hist1, hist2}. These values are

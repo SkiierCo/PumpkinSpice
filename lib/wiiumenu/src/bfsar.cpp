@@ -391,10 +391,18 @@ std::vector<Sec> section_table(const R& r, std::size_t base) {
 // New BFWAV with the template wave's channel count, laid out like the Menu's own waves:
 // header (0x40) | INFO: encoding, rate, loop start, sample count, original loop start, channel reference table,
 // channel infos (0x14 each), DSP-ADPCM infos (0x2E each, ADPCM only), 32-byte aligned | DATA: 0x18 bytes, then
-// each channel's samples, channels 32-byte aligned.
+// each channel's samples, channels 32-byte aligned. `loop_start` >= 0: the wave loops from that sample to its end
+// (see replace_wave).
 Bytes build_wave(const R& r, std::size_t tpl, std::uint32_t rate, const std::vector<std::vector<std::int16_t>>& in, bool adpcm,
-                 std::uint32_t channels_out = 0) {
+                 std::uint32_t channels_out = 0, std::int64_t loop_start = -1) {
     if (in.empty() || in[0].empty()) throw FormatError("the new audio is empty");
+    const bool loop = loop_start >= 0;
+    if (loop) {
+        if (std::size_t(loop_start) >= in[0].size()) throw FormatError("the loop starts past the end of the audio");
+        if (adpcm && loop_start % 14) throw FormatError("a DSP-ADPCM loop has to start on a 14-sample frame");
+        if (adpcm && in[0].size() % 14 == 0)
+            throw FormatError("a looping DSP-ADPCM wave can't be a whole number of 14-sample frames long (add or trim a sample)");
+    }
     std::size_t info = 0;
     for (const Sec& s : section_table(r, tpl))
         if (s.type == 0x7000) info = s.offset;
@@ -417,7 +425,7 @@ Bytes build_wave(const R& r, std::size_t tpl, std::uint32_t rate, const std::vec
     std::vector<Bytes> samples;
     for (std::uint32_t c = 0; c < nch; ++c) {
         if (adpcm) {
-            enc.push_back(bfstm::encode_adpcm(ch[c], 0, 0x3800));
+            enc.push_back(bfstm::encode_adpcm(ch[c], loop ? std::uint32_t(loop_start) : 0, 0x3800));
             samples.push_back(enc.back().data);
         } else {
             Bytes s(frames * 2);
@@ -446,8 +454,11 @@ Bytes build_wave(const R& r, std::size_t tpl, std::uint32_t rate, const std::vec
     const std::size_t b = info_at + 8;
     std::memcpy(w.data() + info_at, "INFO", 4);
     put32(w, info_at + 4, std::uint32_t(info_size));
-    w[b] = adpcm ? 2 : 1;                 // encoding; loop flag 0
+    w[b] = adpcm ? 2 : 1;                 // encoding
+    w[b + 1] = loop ? 1 : 0;              // loop flag
     put32(w, b + 4, rate);
+    put32(w, b + 0x08, loop ? std::uint32_t(loop_start) : 0);  // loop start (original loop start, +0x10, stays 0 like
+                                                                // every looping wave the Menu ships)
     put32(w, b + 0x0C, std::uint32_t(frames));
     put32(w, b + table, nch);
     for (std::uint32_t c = 0; c < nch; ++c) {
@@ -672,17 +683,21 @@ Bytes silence_bank(ByteView data, std::uint32_t bank, std::uint32_t wave_archive
 }
 
 Bytes replace_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, std::uint32_t sample_rate,
-                   const std::vector<std::vector<std::int16_t>>& channels, bool adpcm, std::uint32_t channels_out) {
-    return put_wave(data, wave_archive, wave,
-                    [&](const R& r, std::size_t tpl) { return build_wave(r, tpl, sample_rate, channels, adpcm, channels_out); });
+                   const std::vector<std::vector<std::int16_t>>& channels, bool adpcm, std::uint32_t channels_out,
+                   std::int64_t loop_start) {
+    return put_wave(data, wave_archive, wave, [&](const R& r, std::size_t tpl) {
+        return build_wave(r, tpl, sample_rate, channels, adpcm, channels_out, loop_start);
+    });
 }
 
-Bytes copy_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, ByteView from, std::uint32_t from_wave) {
+Bytes copy_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, ByteView from, std::uint32_t from_wave,
+                std::int32_t from_wave_archive) {
     const Archive fa = read(from);
-    if (wave_archive >= fa.wave_archives.size()) throw FormatError("source has no wave archive " + std::to_string(wave_archive));
+    const std::uint32_t src_warc = from_wave_archive < 0 ? wave_archive : std::uint32_t(from_wave_archive);
+    if (src_warc >= fa.wave_archives.size()) throw FormatError("source has no wave archive " + std::to_string(src_warc));
     const R fr{from};
-    const auto fc = warc_copies(fr, fa.wave_archives[wave_archive].file);
-    if (fc.empty()) throw FormatError("source does not store wave archive " + std::to_string(wave_archive));
+    const auto fc = warc_copies(fr, fa.wave_archives[src_warc].file);
+    if (fc.empty()) throw FormatError("source does not store wave archive " + std::to_string(src_warc));
     const auto fs = sections(fr, fc.front().fwar);
     if (from_wave >= fr.u32(fs.at(0x6800) + 8)) throw FormatError("source wave " + std::to_string(from_wave) + " out of range");
     const std::size_t e = fs.at(0x6800) + 12 + 12 * std::size_t(from_wave);
@@ -705,6 +720,330 @@ Bytes stream_music(ByteView data, std::uint8_t tv_volume, std::uint8_t drc_volum
     const auto bgm = std::find_if(a.banks.begin(), a.banks.end(), [](const Named& b) { return b.name == "BANK_MEN_BGM"; });
     if (bgm == a.banks.end()) throw FormatError("no bank named BANK_MEN_BGM");
     return silence_bank(sar, bgm->index, 1, nullptr);
+}
+
+Bytes alias_sound(ByteView data, const std::string& sound, const std::string& source, std::int64_t file) {
+    const Archive a = read(data);
+    const Sound* dst = nullptr;
+    const Sound* src = nullptr;
+    for (const auto& s : a.sounds) {
+        if (s.name == sound) dst = &s;
+        if (s.name == source) src = &s;
+    }
+    if (!dst) throw FormatError("no sound named " + sound);
+    if (!src) throw FormatError("no sound named " + source);
+    const std::uint32_t fid = file >= 0 ? std::uint32_t(file) : src->file;
+    if (fid >= a.files.size()) throw FormatError("no file " + std::to_string(fid));
+    Bytes out(data.begin(), data.end());
+    put32(out, dst->entry_offset, fid);
+    out[dst->entry_offset + 0x0C] = data[src->entry_offset + 0x0C];  // detail type (stream / wave / sequence)
+    out[dst->entry_offset + 0x0D] = data[src->entry_offset + 0x0D];
+    put32(out, dst->entry_offset + 0x10, std::uint32_t(std::int64_t(src->detail_offset) - std::int64_t(dst->entry_offset)));
+    const Archive check = read(out);
+    const Sound& c = check.sounds[dst->index];
+    if (c.type != src->type || c.file != fid || c.detail_offset != src->detail_offset)
+        throw FormatError("internal error: sound alias did not take");
+    return out;
+}
+
+Bytes embed_file(ByteView data, std::uint32_t file, ByteView bytes, std::size_t tail) {
+    const R r{data};
+    const Layout l = layout(r);
+    std::size_t info_e = 0, file_e = 0;
+    for (const Sec& s : section_table(r, 0)) {
+        if (s.type == 0x2001) info_e = s.entry;
+        if (s.type == 0x2002) file_e = s.entry;
+    }
+    if (!info_e || !file_e) throw FormatError("BFSAR blocks missing");
+    const std::size_t info = r.u32(info_e + 4), info_size = r.u32(info_e + 8);
+    const std::size_t file_blk = r.u32(file_e + 4), file_size = r.u32(file_e + 8);
+    if (file_blk + file_size != data.size()) throw FormatError("the FILE block isn't the last thing in the archive");
+    const std::size_t ft = l.refs.at(0x2106);
+    if (file >= r.u32(ft)) throw FormatError("no file " + std::to_string(file));
+    const std::size_t entry = ft + 4 + 8 * std::size_t(file);
+    if (r.u16(ft + std::size_t(r.s32(entry + 4))) != 0x220D) throw FormatError("file " + std::to_string(file) + " isn't external");
+
+    // the file's bytes at the end of FILE, 32-byte aligned in the archive, then `tail` zero bytes
+    const std::size_t pad = (0x20 - data.size() % 0x20) % 0x20;
+    const std::size_t data_off = data.size() + pad - (file_blk + 8);  // relative to the FILE block's data
+    // new internal file info, laid out like the archive's own: 220C ref, a zero word, the location in FILE
+    // (1F00, offset, size), then a reference to an empty group table
+    Bytes fi(0x24, 0);
+    fi[0] = 0x22; fi[1] = 0x0C; put32(fi, 4, 0x0C);
+    fi[0x0C] = 0x1F; put32(fi, 0x10, std::uint32_t(data_off)); put32(fi, 0x14, std::uint32_t(bytes.size()));
+    fi[0x18] = 0x01; fi[0x19] = 0x00; put32(fi, 0x1C, 0x14);
+    // appended to INFO, which grows by a multiple of 4 KB so the FILE block keeps its alignment
+    const std::size_t new_info = info + ((info_size + 3) & ~std::size_t(3));
+    const std::size_t grow = ((new_info + fi.size() - (info + info_size)) + 0xFFF) & ~std::size_t(0xFFF);
+    Bytes out(data.begin(), data.begin() + std::ptrdiff_t(info + info_size));
+    out.resize(info + info_size + grow, 0);
+    std::copy(fi.begin(), fi.end(), out.begin() + std::ptrdiff_t(new_info));
+    out.insert(out.end(), data.begin() + std::ptrdiff_t(info + info_size), data.end());
+    out.resize(out.size() + pad, 0);
+    out.insert(out.end(), bytes.begin(), bytes.end());
+    out.resize(out.size() + tail, 0);
+
+    put32(out, entry + 4, std::uint32_t(new_info - ft));  // the file table entry -> the new info
+    put32(out, info + 4, std::uint32_t(info_size + grow));
+    put32(out, info_e + 8, std::uint32_t(info_size + grow));
+    const std::size_t new_file_size = file_size + pad + bytes.size() + tail;
+    put32(out, file_e + 4, std::uint32_t(file_blk + grow));
+    put32(out, file_e + 8, std::uint32_t(new_file_size));
+    put32(out, file_blk + grow + 4, std::uint32_t(new_file_size));
+    put32(out, 0x0C, std::uint32_t(out.size()));
+
+    // check: the file reads back as internal with these bytes, every other file is unchanged
+    const Archive a = read(data), c = read(out);
+    const File& f = c.files.at(file);
+    if (f.external || !f.offset || f.size != bytes.size() ||
+        !std::equal(bytes.begin(), bytes.end(), out.begin() + std::ptrdiff_t(*f.offset)))
+        throw FormatError("internal error: embedded file does not read back");
+    for (std::size_t i = 0; i < a.files.size(); ++i) {
+        if (i == file) continue;
+        const File &x = a.files[i], &y = c.files[i];
+        if (x.external != y.external || x.path != y.path || x.size != y.size || bool(x.offset) != bool(y.offset) ||
+            (x.offset && !std::equal(data.begin() + std::ptrdiff_t(*x.offset), data.begin() + std::ptrdiff_t(*x.offset + x.size),
+                                     out.begin() + std::ptrdiff_t(*y.offset))))
+            throw FormatError("internal error: file " + std::to_string(i) + " changed while embedding");
+    }
+    return out;
+}
+
+Bytes unembed_file(ByteView data, std::uint32_t file, const std::string& path) {
+    const R r{data};
+    const Layout l = layout(r);
+    std::size_t info_e = 0, file_e = 0;
+    for (const Sec& s : section_table(r, 0)) {
+        if (s.type == 0x2001) info_e = s.entry;
+        if (s.type == 0x2002) file_e = s.entry;
+    }
+    const std::size_t info = r.u32(info_e + 4), info_size = r.u32(info_e + 8);
+    const std::size_t file_blk = r.u32(file_e + 4), file_size = r.u32(file_e + 8);
+    const std::size_t ft = l.refs.at(0x2106);
+    const std::vector<std::size_t> infos = table(r, ft);
+    if (file >= infos.size() || r.u16(infos[file]) != 0x220C) throw FormatError("file " + std::to_string(file) + " isn't internal");
+    std::size_t ext_info = 0;  // an existing external file info, copied for the new one
+    for (std::size_t o : infos)
+        if (r.u16(o) == 0x220D) { ext_info = o; break; }
+    if (!ext_info) throw FormatError("archive has no external file to copy");
+    const std::size_t ro = infos[file] + std::size_t(r.s32(infos[file] + 4));
+    const std::int32_t off = r.s32(ro + 4);
+    const std::uint32_t size = r.u32(ro + 8);
+
+    // the new external info (an existing one up to its path, then `path`) appended to INFO, which grows by a multiple
+    // of 4 KB so the FILE block keeps its alignment
+    const std::size_t path_rel = std::size_t(r.s32(ext_info + 4));
+    Bytes fi(data.begin() + std::ptrdiff_t(ext_info), data.begin() + std::ptrdiff_t(ext_info + path_rel));
+    fi.insert(fi.end(), path.begin(), path.end());
+    fi.push_back(0);
+    while (fi.size() % 4) fi.push_back(0);
+    const std::size_t new_info = info + ((info_size + 3) & ~std::size_t(3));
+    const std::size_t grow = ((new_info + fi.size() - (info + info_size)) + 0xFFF) & ~std::size_t(0xFFF);
+    // the file's data comes off the end of FILE when nothing but zero bytes follows it (as embed_file leaves it)
+    std::size_t end = data.size();
+    if (off >= 0) {
+        const std::size_t at = file_blk + 8 + std::size_t(off);
+        bool last = true;
+        for (std::size_t i : infos) {
+            if (r.u16(i) != 0x220C || i == infos[file]) continue;
+            const std::int32_t o2 = r.s32(i + std::size_t(r.s32(i + 4)) + 4);
+            if (o2 >= 0 && file_blk + 8 + std::size_t(o2) > at) last = false;
+        }
+        if (last && std::all_of(data.begin() + std::ptrdiff_t(at + size), data.end(), [](std::uint8_t b) { return b == 0; })) end = at;
+    }
+    Bytes out(data.begin(), data.begin() + std::ptrdiff_t(info + info_size));
+    out.resize(info + info_size + grow, 0);
+    std::copy(fi.begin(), fi.end(), out.begin() + std::ptrdiff_t(new_info));
+    out.insert(out.end(), data.begin() + std::ptrdiff_t(info + info_size), data.begin() + std::ptrdiff_t(end));
+
+    put32(out, ft + 4 + 8 * std::size_t(file) + 4, std::uint32_t(new_info - ft));  // the file table entry -> the new info
+    put32(out, info + 4, std::uint32_t(info_size + grow));
+    put32(out, info_e + 8, std::uint32_t(info_size + grow));
+    const std::size_t new_file_size = file_size - (data.size() - end);
+    put32(out, file_e + 4, std::uint32_t(file_blk + grow));
+    put32(out, file_e + 8, std::uint32_t(new_file_size));
+    put32(out, file_blk + grow + 4, std::uint32_t(new_file_size));
+    put32(out, 0x0C, std::uint32_t(out.size()));
+
+    // check: the file reads back as external with `path`, every other file is unchanged
+    const Archive a = read(data), c = read(out);
+    if (!c.files.at(file).external || c.files.at(file).path != path) throw FormatError("internal error: file did not become external");
+    for (std::size_t i = 0; i < a.files.size(); ++i) {
+        if (i == file) continue;
+        const File &x = a.files[i], &y = c.files[i];
+        if (x.external != y.external || x.path != y.path || x.size != y.size || bool(x.offset) != bool(y.offset) ||
+            (x.offset && !std::equal(data.begin() + std::ptrdiff_t(*x.offset), data.begin() + std::ptrdiff_t(*x.offset + x.size),
+                                     out.begin() + std::ptrdiff_t(*y.offset))))
+            throw FormatError("internal error: file " + std::to_string(i) + " changed while making file " + std::to_string(file) + " external");
+    }
+    return out;
+}
+
+Bytes replace_group_file(ByteView data, std::uint32_t group_file, std::uint32_t file, ByteView bytes) {
+    const R r{data};
+    const Layout l = layout(r);
+    std::size_t file_e = 0;
+    for (const Sec& s : section_table(r, 0))
+        if (s.type == 0x2002) file_e = s.entry;
+    const std::size_t file_blk = r.u32(file_e + 4);
+    const std::vector<std::size_t> infos = table(r, l.refs.at(0x2106));
+    if (group_file >= infos.size() || r.u16(infos[group_file]) != 0x220C) throw FormatError("group file isn't stored in FILE");
+    const std::size_t gro = infos[group_file] + std::size_t(r.s32(infos[group_file] + 4));
+    const std::int32_t g_off = r.s32(gro + 4);
+    const std::size_t g = file_blk + 8 + std::size_t(g_off);
+    if (g_off < 0 || r.magic(g) != "FGRP") throw FormatError("file " + std::to_string(group_file) + " isn't a group");
+    std::size_t g_info = 0, g_file_e = 0, g_file = 0;
+    for (const Sec& s : section_table(r, g)) {
+        if (s.type == 0x7800) g_info = s.offset;
+        if (s.type == 0x7801) { g_file_e = s.entry; g_file = s.offset; }
+    }
+    if (!g_info || !g_file) throw FormatError("group blocks missing");
+    struct Item { std::size_t e; std::uint32_t file; std::int32_t off; std::uint32_t size; };
+    std::vector<Item> items;
+    for (std::size_t e : table(r, g_info + 8)) items.push_back({e, r.u32(e), r.s32(e + 8), r.u32(e + 12)});
+    const auto t = std::find_if(items.begin(), items.end(), [&](const Item& it) { return it.file == file; });
+    if (t == items.end() || std::count_if(items.begin(), items.end(), [&](const Item& it) { return it.file == file; }) != 1)
+        throw FormatError("file " + std::to_string(file) + " isn't in the group exactly once");
+    auto align32 = [](std::size_t v) { return (v + 0x1F) & ~std::size_t(0x1F); };
+    const std::size_t old_padded = align32(t->size), new_padded = align32(bytes.size());
+    const std::int64_t grow = std::int64_t(new_padded) - std::int64_t(old_padded);
+    const std::size_t cut = g_file + 8 + std::size_t(t->off);
+
+    Bytes out(data.begin(), data.begin() + std::ptrdiff_t(cut));
+    out.insert(out.end(), bytes.begin(), bytes.end());
+    out.resize(cut + new_padded, 0);
+    out.insert(out.end(), data.begin() + std::ptrdiff_t(cut + old_padded), data.end());
+    // inside the group: the file's size, later items' offsets, the FILE block and the group's size
+    put32(out, t->e + 12, std::uint32_t(bytes.size()));
+    for (const Item& it : items)
+        if (it.off > t->off) add32(out, it.e + 8, grow);
+    add32(out, g_file_e + 8, grow);
+    add32(out, g_file + 4, grow);
+    add32(out, g + 0x0C, grow);
+    // in the archive: the group file's size, the offsets of internal files stored after the replaced data, the FILE
+    // block and the archive's size. The Menu's archive points the FILE entries of files that are in a group into the
+    // group's own data (sequences 1 to 8 inside GROUP_MEN), so only the ones after the replaced file move.
+    add32(out, gro + 8, grow);
+    for (std::size_t i = 0; i < infos.size(); ++i) {
+        if (i == group_file || r.u16(infos[i]) != 0x220C) continue;
+        const std::size_t ro = infos[i] + std::size_t(r.s32(infos[i] + 4));
+        const std::int32_t off = r.s32(ro + 4);
+        if (off >= 0 && file_blk + 8 + std::size_t(off) >= cut + old_padded) add32(out, ro + 4, grow);
+    }
+    add32(out, file_e + 8, grow);
+    add32(out, file_blk + 4, grow);
+    put32(out, 0x0C, std::uint32_t(out.size()));
+
+    // check: the new file is in place and every other item of every group, and every file in FILE, is unchanged
+    const R c{out};
+    for (const Item& it : items) {
+        const std::size_t e = it.e;  // the item table sits before the cut
+        const std::size_t at = g_file + 8 + std::size_t(c.s32(e + 8));
+        if (it.file == file) {
+            if (c.u32(e + 12) != bytes.size() || !std::equal(bytes.begin(), bytes.end(), out.begin() + std::ptrdiff_t(at)))
+                throw FormatError("internal error: new group file does not read back");
+        } else if (!std::equal(data.begin() + std::ptrdiff_t(g_file + 8 + std::size_t(it.off)),
+                               data.begin() + std::ptrdiff_t(g_file + 8 + std::size_t(it.off) + it.size), out.begin() + std::ptrdiff_t(at))) {
+            throw FormatError("internal error: group file " + std::to_string(it.file) + " moved wrong");
+        }
+    }
+    const Archive a = read(data), b = read(out);
+    for (std::size_t i = 0; i < a.files.size(); ++i) {
+        const File &x = a.files[i], &y = b.files[i];
+        if (i == group_file || !x.offset) continue;
+        if (!y.offset || x.size != y.size ||
+            !std::equal(data.begin() + std::ptrdiff_t(*x.offset), data.begin() + std::ptrdiff_t(*x.offset + x.size),
+                        out.begin() + std::ptrdiff_t(*y.offset)))
+            throw FormatError("internal error: file " + std::to_string(i) + " moved wrong");
+    }
+    return out;
+}
+
+namespace {
+
+// A stored file's bytes: directly in FILE, or its first copy inside a group file.
+Bytes stored_file_bytes(ByteView data, std::uint32_t fid) {
+    const Archive a = read(data);
+    if (fid < a.files.size() && a.files[fid].offset)
+        return Bytes(data.begin() + std::ptrdiff_t(*a.files[fid].offset), data.begin() + std::ptrdiff_t(*a.files[fid].offset + a.files[fid].size));
+    const R r{data};
+    for (std::size_t gi = 0; gi < a.groups.size(); ++gi) {
+        const File& gf = a.files.at(a.groups[gi].file);
+        if (!gf.offset || gf.magic != "FGRP") continue;
+        const auto gs = sections(r, *gf.offset);
+        for (std::size_t e : table(r, gs.at(0x7800) + 8))
+            if (r.u32(e) == fid) {
+                const std::size_t at = gs.at(0x7801) + 8 + std::size_t(r.s32(e + 8));
+                return Bytes(data.begin() + std::ptrdiff_t(at), data.begin() + std::ptrdiff_t(at + r.u32(e + 12)));
+            }
+    }
+    throw FormatError("file " + std::to_string(fid) + " is not stored in this archive");
+}
+
+}  // namespace
+
+Bytes stream_music_inside(ByteView data, ByteView stream, const std::vector<std::int16_t>& gamepad, std::uint32_t gamepad_rate,
+                          std::uint32_t gamepad_loop_start, std::uint8_t tv_volume, std::uint8_t drc_volume) {
+    constexpr std::uint32_t warc = 1, wave = 302;
+    // TV: BGM_MEN_TV streams a new file with BGM_SET_ACS's settings; the layer sequences are muted. One stream sound:
+    // the default limits are enough (the other method's 4/4/16 was for two streams restarting at a folder close).
+    Bytes sar = add_stream(data, "BGM_MEN_TV", "BGM_SET_ACS", "stream/BGM_MEN.bfstm",
+                           {"BGM_MEN_DRC_RYTHM", "BGM_MEN_DRC_SYNTH", "BGM_MEN_DRC_SYNTH_2", "BGM_MEN_TV_SYNTH"});
+    std::uint32_t stream_file = 0;
+    for (const auto& s : read(sar).sounds)
+        if (s.name == "BGM_MEN_TV") stream_file = s.file;
+    sar = set_stream_limits(sar, 1, 1, 4);
+
+    // GamePad: the old music's waves are silenced (sound memory), then wave 302 becomes the song, looping on its own
+    {
+        const Archive a = read(sar);
+        const auto bgm = std::find_if(a.banks.begin(), a.banks.end(), [](const Named& b) { return b.name == "BANK_MEN_BGM"; });
+        if (bgm == a.banks.end()) throw FormatError("no bank named BANK_MEN_BGM");
+        sar = silence_bank(sar, bgm->index, warc, nullptr);
+    }
+    sar = replace_wave(sar, warc, wave, gamepad_rate, {gamepad}, true, 1, gamepad_loop_start);
+
+    // ...played as a wave sound (a bank note can't hold a long loop): the user select screen's wave sound file
+    // (BGM_ACS_W / BGM_ACS_W_DRC) with every wave pointed at wave 302, stored in place of an empty wave sound file
+    // the Menu's own group holds and nothing plays (file 20 in the 5.5.5 Menu). The user select group isn't loaded
+    // while the Menu runs, so its own file can't be used.
+    const Archive a = read(sar);
+    const Sound* acs = nullptr;
+    for (const auto& s : a.sounds)
+        if (s.name == "BGM_ACS_W_DRC") acs = &s;
+    if (!acs || acs->type != SoundType::Wave) throw FormatError("no wave sound named BGM_ACS_W_DRC");
+    Bytes wsd = stored_file_bytes(sar, acs->file);
+    {
+        const R w{wsd};
+        if (w.magic(0) != "FWSD") throw FormatError("BGM_ACS_W_DRC's file isn't a wave sound file");
+        const std::size_t body = sections(w, 0).at(0x6800) + 8;
+        std::size_t ids = 0;
+        for (int k = 0; k < 2; ++k)
+            if (w.u16(body + 8 * std::size_t(k)) == 0x0100) ids = body + 8 * std::size_t(k) + std::size_t(w.s32(body + 8 * std::size_t(k) + 4));
+        if (!ids) throw FormatError("wave sound file has no wave id table");
+        for (std::uint32_t i = 0, n = w.u32(ids); i < n; ++i) {
+            put32(wsd, ids + 4 + 8 * i, 0x05000000 | warc);
+            put32(wsd, ids + 8 + 8 * i, wave);
+        }
+    }
+    std::size_t men = a.groups.size();
+    for (std::size_t gi = 0; gi < a.groups.size(); ++gi)
+        for (const auto& it : a.group_items[gi])
+            if (it.file == a.wave_archives.at(warc).file) men = gi;
+    if (men == a.groups.size()) throw FormatError("wave archive 1 isn't in a group");
+    std::int64_t target = -1;
+    for (const auto& it : a.group_items[men]) {
+        if (it.magic != "FWSD") continue;
+        if (std::none_of(a.sounds.begin(), a.sounds.end(), [&](const Sound& s) { return s.file == it.file; })) target = it.file;
+    }
+    if (target < 0) throw FormatError("the Menu's group has no unused wave sound file to hold the GamePad's music");
+    sar = replace_group_file(sar, a.groups[men].file, std::uint32_t(target), wsd);
+    sar = alias_sound(sar, "BGM_MEN_DRC_MAIN", "BGM_ACS_W_DRC", target);
+
+    sar = set_sound_volume(sar, "BGM_MEN_TV", tv_volume);
+    sar = set_sound_volume(sar, "BGM_MEN_DRC_MAIN", drc_volume);
+    // the stream inside the archive, with 128 KB after it so the player's last block read stays inside the file
+    return embed_file(sar, stream_file, stream, 0x20000);
 }
 
 Wave read_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave) {

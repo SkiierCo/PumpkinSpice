@@ -102,13 +102,20 @@ Bytes set_sound_volume(ByteView data, const std::string& sound, std::uint8_t vol
 // changed (directly in FILE and inside group files); data after the wave moves by a multiple of
 // 32 bytes, and the offsets and sizes in the wave archive, group file and archive are updated.
 // Verified by reading back: the new wave is in place and every other wave and file is unchanged.
-// `channels_out` 1 or 2 sets the new wave's channel count; 0 keeps the old wave's.
+// `channels_out` 1 or 2 sets the new wave's channel count; 0 keeps the old wave's. `loop_start` >= 0 makes the wave
+// loop on its own from that sample to its end (loop flag, loop start, and each channel's loop context: the predictor
+// and scale of the frame the loop starts in and the two samples before it, at +0x26 of the DSP-ADPCM info as in the
+// Menu's own waves). For DSP-ADPCM the loop has to start on a 14-sample frame, and the length can't be a whole number
+// of frames: that puts the end offset on the header nibble of a frame that doesn't exist.
 Bytes replace_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, std::uint32_t sample_rate,
-                   const std::vector<std::vector<std::int16_t>>& channels, bool adpcm = true, std::uint32_t channels_out = 0);
+                   const std::vector<std::vector<std::int16_t>>& channels, bool adpcm = true, std::uint32_t channels_out = 0,
+                   std::int64_t loop_start = -1);
 
 // Put wave `from_wave` of another archive's wave archive `wave_archive` (as stored, any encoding) in place of
-// wave `wave` here. Same checks as replace_wave.
-Bytes copy_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, ByteView from, std::uint32_t from_wave);
+// wave `wave` here. Same checks as replace_wave. `from_wave_archive` takes the wave from another wave archive of the
+// source (-1: the same one as `wave_archive`).
+Bytes copy_wave(ByteView data, std::uint32_t wave_archive, std::uint32_t wave, ByteView from, std::uint32_t from_wave,
+                std::int32_t from_wave_archive = -1);
 
 // Point entry `index` of bank `bank`'s wave id table at wave `wave` of `wave_archive`. Instruments refer to the table
 // by index, so this changes which wave they play. A bank stored in several groups has a separate table per copy (each
@@ -133,6 +140,34 @@ Bytes share_bank_table(ByteView data, std::uint32_t bank, std::uint32_t wave_arc
 // and the waves only BANK_MEN_BGM uses are made silent (GROUP_MEN shares sound memory with the bigger stream buffers;
 // with the old song still in it the Menu asserts at boot). The sound effects use other banks, so they stay.
 Bytes stream_music(ByteView data, std::uint8_t tv_volume, std::uint8_t drc_volume, const std::string& path = "stream/BGM_MEN.bfstm");
+
+// Make `sound` play `source`'s file and type settings (any sound type) by repointing its entry; it keeps its own
+// player, volume and name. `file` >= 0 gives it that file instead of `source`'s. Fixed-size patch.
+Bytes alias_sound(ByteView data, const std::string& sound, const std::string& source, std::int64_t file = -1);
+
+// Store external file `file` (e.g. a stream) inside the archive: `bytes` go at the end of FILE (32-byte aligned,
+// followed by `tail` zero bytes) and the file's entry becomes an internal one pointing at them. INFO grows by a
+// multiple of 4 KB for the new entry. Only one sound at a time may stream a file stored this way: sounds streaming
+// from inside the archive share its file handle and take turns reading (each plays at double speed).
+Bytes embed_file(ByteView data, std::uint32_t file, ByteView bytes, std::size_t tail = 0);
+
+// The other way round: internal file `file` becomes an external file at `path` (relative to the archive's folder).
+// Its data comes off the end of FILE when it's the last thing there followed only by zero bytes (as embed_file leaves
+// it); otherwise it stays, unused. INFO grows by a multiple of 4 KB for the new entry.
+Bytes unembed_file(ByteView data, std::uint32_t file, const std::string& path);
+
+// Replace file `file` inside group file `group_file` with `bytes`, moving everything after it (32-byte aligned):
+// the group's item table, its FILE block and size, and the archive's internal files after the group are updated.
+Bytes replace_group_file(ByteView data, std::uint32_t group_file, std::uint32_t file, ByteView bytes);
+
+// The Menu's music in the archive alone, no stream file next to it: BGM_MEN_TV streams `stream` (a BFSTM) stored
+// inside the archive (embed_file); BGM_MEN_DRC_MAIN (GamePad) plays `gamepad` (mono, `gamepad_rate`) as wave 302 of
+// wave archive 1, looping on its own from `gamepad_loop_start`, through a wave sound in the Menu's own group (the user
+// select screen's wave sound file, copied over an empty unused one). The layer sequences are muted, the stream limits
+// stay 1 / 1 / 4, the old music's waves are silenced and the two music sounds get `tv_volume` and `drc_volume`.
+// Worked on the console (2026-11-15). Cemu doesn't loop long waves: the GamePad breaks at its loop there.
+Bytes stream_music_inside(ByteView data, ByteView stream, const std::vector<std::int16_t>& gamepad, std::uint32_t gamepad_rate,
+                          std::uint32_t gamepad_loop_start, std::uint8_t tv_volume, std::uint8_t drc_volume);
 
 // A wave as it's stored in the archive (first stored copy of the wave archive): its format, rate, length and loop,
 // and for DSP-ADPCM every channel's coefficients, start values and sample data as they are.

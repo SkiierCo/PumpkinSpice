@@ -65,6 +65,9 @@ namespace {
     constexpr uint8_t kTvVolume         = 44;
     constexpr uint8_t kDrcVolume        = 41;
     constexpr uint32_t kEasterEggChance = 100; // 1 in this many Menu starts
+    // the music prep's record and index format: raised when the prep learns something new, so older results are
+    // looked at again (2: songs stored inside the archive, 2026-11-15)
+    const char *kRecordFormat = "2";
 
     struct Volume {
         uint8_t tv = kTvVolume, drc = kDrcVolume;
@@ -255,7 +258,7 @@ namespace {
     }
 
     // a stream file's length in milliseconds (its INFO block: sample rate, sample count), 0 if it can't be read
-    uint32_t StreamLength(const Bytes &b) {
+    uint32_t StreamLength(wiiumenu::ByteView b) {
         try {
             if (b.size() < 0x40 || std::string(b.begin(), b.begin() + 4) != "FSTM") {
                 return 0;
@@ -336,7 +339,9 @@ namespace {
     }
 
     // What a source's song is: its kind ("wave": stream written to songs/<id>.bfstm; "stream": the archive's own stream
-    // file; "none"), its id (a hash of the audio, the same for the same song wherever it is) and its length in ms
+    // file; "inside": the stream stored inside the archive (LatteLab's one-file music, 2026-11-15), copied to
+    // songs/<id>.bfstm; "none"), its id (a hash of the audio, the same for the same song wherever it is) and its length
+    // in ms
     struct SongInfo {
         std::string kind = "none", id;
         uint32_t ms      = 0;
@@ -349,8 +354,29 @@ namespace {
             return {};
         }
         if (tv->type == bfsar::SoundType::Stream) {
+            if (tv->file >= a.files.size()) {
+                return {};
+            }
+            const bfsar::File &f = a.files[tv->file];
+            if (!f.external && f.offset && f.magic == "FSTM" && *f.offset + f.size <= sar.size()) {
+                // stored inside the archive: copied out once, like a wave 302 song (only one sound can stream it from
+                // inside the archive, and shuffle plays it through both music sounds)
+                const wiiumenu::ByteView inside(sar.data() + *f.offset, f.size);
+                Hash h;
+                h.Add(inside.data(), inside.size());
+                const SongInfo info{"inside", h.Hex('s'), StreamLength(inside)};
+                const std::string file = Cache("songs/" + info.id + ".bfstm");
+                if (IsFile(file)) {
+                    SDLOG("music: %s: same song as songs/%s.bfstm", s.name.c_str(), info.id.c_str());
+                } else if (!WriteAll(file, inside.data(), inside.size())) {
+                    throw FormatError("couldn't write the song to the SD card");
+                } else {
+                    SDLOG("music: %s: stream inside the archive, %u bytes copied out", s.name.c_str(), (unsigned) inside.size());
+                }
+                return info;
+            }
             const std::string file = s.folder + "/stream/BGM_MEN.bfstm";
-            const bool own         = tv->file < a.files.size() && a.files[tv->file].external && a.files[tv->file].path == "stream/BGM_MEN.bfstm";
+            const bool own         = f.external && f.path == "stream/BGM_MEN.bfstm";
             Bytes stream;
             if (!own || !ReadAll(file, stream)) {
                 return {};
@@ -408,10 +434,24 @@ namespace {
         const auto tv          = std::find_if(a.sounds.begin(), a.sounds.end(), [](const bfsar::Sound &x) { return x.name == "BGM_MEN_TV"; });
         const bool streamed    = tv != a.sounds.end() && tv->type == bfsar::SoundType::Stream && tv->file < a.files.size() &&
                               a.files[tv->file].external && a.files[tv->file].path == "stream/BGM_MEN.bfstm";
+        const bool inside = tv != a.sounds.end() && tv->type == bfsar::SoundType::Stream && tv->file < a.files.size() &&
+                            !a.files[tv->file].external && a.files[tv->file].offset;
         Bytes out;
         if (streamed) {
             out = bfsar::set_sound_volume(sar, "BGM_MEN_TV", v.tv);
             out = bfsar::set_sound_volume(out, "BGM_MEN_DRC_MAIN", v.drc);
+        } else if (inside) {
+            // the stream inside the archive (LatteLab's one-file music), with the GamePad on its own wave: the TV streams
+            // stream/BGM_MEN.bfstm (the song layer) instead and the stream comes out of the archive, then the GamePad
+            // streams the same file like a streamed theme (4/4/16, bfsar::stream_music) and its own wave (302, the song)
+            // is silenced for the sound memory the stream buffers need. Only that wave: in MII SFX based archives
+            // BANK_MEN_BGM's other slots point at wave 0, which is also a Mii voice (silence_bank would mute it).
+            out = bfsar::unembed_file(sar, tv->file, "stream/BGM_MEN.bfstm");
+            out = bfsar::alias_to_stream(out, "BGM_MEN_DRC_MAIN", "BGM_MEN_TV");
+            out = bfsar::set_stream_limits(out, 4, 4, 16);
+            out = bfsar::set_sound_volume(out, "BGM_MEN_TV", v.tv);
+            out = bfsar::set_sound_volume(out, "BGM_MEN_DRC_MAIN", v.drc);
+            out = bfsar::replace_wave(out, 1, 302, 32000, {std::vector<int16_t>(15, 0)}, true, 1);
         } else {
             out = bfsar::stream_music(sar, v.tv, v.drc);
         }
@@ -436,10 +476,10 @@ namespace {
         std::vector<Song> out;
         for (const auto &src : sources) {
             const auto r = ReadRecord(src.name, 4);
-            if (r[0] != Stamp(src.archive) || (r[1] != "wave" && r[1] != "stream") || r[2].empty()) {
+            if (r[0] != Stamp(src.archive) || (r[1] != "wave" && r[1] != "stream" && r[1] != "inside") || r[2].empty()) {
                 continue;
             }
-            const std::string stream = r[1] == "wave" ? Cache("songs/" + r[2] + ".bfstm") : src.folder + "/stream/BGM_MEN.bfstm";
+            const std::string stream = r[1] == "stream" ? src.folder + "/stream/BGM_MEN.bfstm" : Cache("songs/" + r[2] + ".bfstm");
             if (!IsFile(stream)) {
                 continue;
             }
@@ -577,7 +617,7 @@ namespace {
     // where its menus come from, and the console's own files (size and time of each). index.txt keeps it with the
     // ready songs, so a Menu start with nothing changed only checks these instead of reading every record.
     std::string Fingerprint(const std::vector<std::string> &themes, const std::vector<Source> &s) {
-        std::string f;
+        std::string f = std::string("format\t") + kRecordFormat + "\n"; // a newer build looks at everything once
         for (const auto &src : s) {
             f += "src\t" + src.name + "\t" + Stamp(src.archive) + "\t" + Stamp(src.volume) + "\n";
         }
@@ -701,9 +741,11 @@ void PrepareMusic(const std::vector<std::string> &themes) {
     // songs to read: no record, or the archive changed since
     std::vector<const Source *> todo;
     for (const auto &src : s) {
-        // a record from before songs had ids and lengths (the first v1.5 test build) is done again too
-        const auto r = ReadRecord(src.name, 4);
-        if (r[0] != Stamp(src.archive) || (r[1] != "none" && (r[2].empty() || r[3].empty()))) {
+        // a record from before songs had ids and lengths (the first v1.5 test build) is done again too, and so is a
+        // "no song" record from a build that knew fewer kinds of song (records carry kRecordFormat since the "inside"
+        // kind: a cafe with its stream inside it was "none" before)
+        const auto r = ReadRecord(src.name, 5);
+        if (r[0] != Stamp(src.archive) || (r[1] != "none" && (r[2].empty() || r[3].empty())) || (r[1] == "none" && r[4] != kRecordFormat)) {
             todo.push_back(&src);
         }
     }
@@ -756,7 +798,7 @@ void PrepareMusic(const std::vector<std::string> &themes) {
             } catch (const std::exception &e) {
                 SDLOG("music: %s: %s", src->name.c_str(), e.what());
             }
-            WriteRecord(src->name, {stamp, song.kind, song.id, std::to_string(song.ms)});
+            WriteRecord(src->name, {stamp, song.kind, song.id, std::to_string(song.ms), kRecordFormat});
             SDLOG("music: %s: %s %s %u ms", src->name.c_str(), song.kind.c_str(), song.id.c_str(), (unsigned) song.ms);
         }
     }
@@ -878,7 +920,7 @@ bool ThemeHasOwnSong(const std::string &theme) {
         return false;
     }
     const auto r = ReadRecord("theme - " + theme, 2); // the theme's record: stamp, kind (Sources' name for it)
-    return r[0] == Stamp(archive) && (r[1] == "wave" || r[1] == "stream");
+    return r[0] == Stamp(archive) && (r[1] == "wave" || r[1] == "stream" || r[1] == "inside");
 }
 
 std::vector<std::string> MusicSongs() {

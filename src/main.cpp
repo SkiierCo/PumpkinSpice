@@ -84,14 +84,13 @@ ON_APPLICATION_START() {
                 RememberShuffledTheme(theme);
             }
             // the theme's package and BPS patches first, so the music prep sees its finished sound archive, then the
-            // music prep: it reads the console's own sound files, before any layer is in place. A song from the config
-            // menu's Music list uses the same prep, and Shuffle music wins over it. With Music priority on "Theme" a
-            // theme with its own song keeps it.
+            // music prep: it reads the console's own sound files, before any layer is in place. It runs at every Menu
+            // start (owner, 2026-11-15), so new songs are ready for the Music list without Shuffle music; with nothing
+            // new it only checks the files' sizes and times. A song from the Music list uses it, and Shuffle music wins
+            // over that. With Music priority on "Theme" a theme with its own song keeps it.
             if (PrepareTheme(theme)) {
                 const bool selectedMusic = !gShuffleMusic && !gSelectedMusic.empty();
-                if (gShuffleMusic || selectedMusic) {
-                    PrepareMusic(themes);
-                }
+                PrepareMusic(themes);
                 ApplyTheme(theme);
                 if (gShuffleMusic) {
                     ApplyShuffledMusic(theme, themes);
